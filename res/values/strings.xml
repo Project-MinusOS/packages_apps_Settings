@@ -49,6 +49,10 @@
     <!-- [CHAR LIMIT=NONE] Toast message when non-admin user attempts to launch developer options. -->
     <string name="dev_settings_available_to_admin_only_warning">Only the admin users can access developer settings.</string>
 
+    <!-- Android debugging as root -->
+    <string name="adb_enable_root">Rooted debugging</string>
+    <string name="adb_enable_summary_root">Allow running Android debugging as root</string>
+
 
     <!-- Category headings in left-pane header menu -->
     <skip />
