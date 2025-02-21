@@ -41,26 +41,6 @@
             android:summary="@string/summary_placeholder"
             settings:controller="com.android.settings.deviceinfo.DeviceNamePreferenceController"
             settings:enableCopying="true"/>
-
-        <!-- Account name -->
-        <Preference
-            android:key="branded_account"
-            android:order="2"
-            android:title="@string/my_device_info_account_preference_title"
-            android:summary="@string/summary_placeholder"
-            settings:enableCopying="true"
-            settings:controller="com.android.settings.deviceinfo.BrandedAccountPreferenceController"/>
-
-        <!-- Phone number -->
-        <Preference
-            android:key="phone_number"
-            android:order="3"
-            android:title="@string/status_number"
-            android:summary="@string/summary_placeholder"
-            android:selectable="false"
-            settings:isPreferenceVisible="@bool/config_show_sim_info"
-            settings:controller="com.android.settings.deviceinfo.PhoneNumberPreferenceController"
-            settings:enableCopying="true"/>
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -94,16 +74,6 @@
         android:selectable="false"
         android:title="@string/my_device_info_device_details_category_title">
 
-        <!-- SIM status -->
-        <Preference
-            android:key="sim_status"
-            android:order="18"
-            android:title="@string/sim_status_title"
-            settings:keywords="@string/keywords_sim_status"
-            android:summary="@string/summary_placeholder"
-            settings:isPreferenceVisible="@bool/config_show_sim_info"
-            settings:controller="com.android.settings.deviceinfo.simstatus.SimStatusPreferenceController"/>
-
         <!-- Model & hardware -->
         <Preference
             android:key="device_model"
@@ -125,17 +95,6 @@
             settings:isPreferenceVisible="@bool/config_show_sim_info"
             settings:enableCopying="true"
             settings:controller="com.android.settings.deviceinfo.simstatus.SimEidPreferenceController"/>
-
-        <!-- IMEI -->
-        <Preference
-            android:key="imei_info"
-            android:order="32"
-            android:title="@string/status_imei"
-            android:summary="@string/summary_placeholder"
-            settings:keywords="@string/keywords_imei_info"
-            settings:enableCopying="true"
-            settings:isPreferenceVisible="@bool/config_show_sim_info"
-            settings:controller="com.android.settings.deviceinfo.imei.ImeiInfoPreferenceController"/>
 
         <!-- Android version -->
         <Preference
@@ -166,7 +125,8 @@
             android:title="@string/wifi_ip_address"
             android:summary="@string/summary_placeholder"
             android:selectable="false"
-            settings:enableCopying="true"/>
+            settings:enableCopying="true"
+            settings:isPreferenceVisible="false"/>
 
         <!-- Wi-Fi MAC address -->
         <Preference
@@ -175,7 +135,8 @@
             android:title="@string/status_wifi_mac_address"
             android:summary="@string/view_saved_network"
             android:fragment="com.android.settings.wifi.savedaccesspoints2.SavedAccessPointsWifiSettings2"
-            settings:enableCopying="false"/>
+            settings:enableCopying="false"
+            settings:isPreferenceVisible="false"/>
 
         <!-- Factory Wi-Fi MAC address -->
         <Preference
@@ -184,7 +145,8 @@
             android:title="@string/status_device_wifi_mac_address"
             android:summary="@string/summary_placeholder"
             android:selectable="false"
-            settings:enableCopying="true"/>
+            settings:enableCopying="true"
+            settings:isPreferenceVisible="false"/>
 
         <!-- Bluetooth address -->
         <Preference
@@ -193,7 +155,8 @@
             android:title="@string/status_bt_address"
             android:summary="@string/summary_placeholder"
             android:selectable="false"
-            settings:enableCopying="true"/>
+            settings:enableCopying="true"
+            settings:isPreferenceVisible="false"/>
 
         <!-- Device up time -->
         <Preference
