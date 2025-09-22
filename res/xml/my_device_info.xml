@@ -34,6 +34,25 @@
             android:summary="@string/summary_placeholder"
             settings:controller="com.android.settings.deviceinfo.DeviceNamePreferenceController"
             settings:enableCopying="true"/>
+
+        <!-- Account name -->
+        <Preference
+            android:key="branded_account"
+            android:order="2"
+            android:title="@string/my_device_info_account_preference_title"
+            android:summary="@string/summary_placeholder"
+            settings:enableCopying="true"
+            settings:controller="com.android.settings.deviceinfo.BrandedAccountPreferenceController"/>
+
+        <!-- Phone number -->
+        <Preference
+            android:key="phone_number"
+            android:order="3"
+            android:title="@string/status_number"
+            android:summary="@string/summary_placeholder"
+            settings:isPreferenceVisible="@bool/config_show_sim_info"
+            settings:controller="com.android.settings.deviceinfo.PhoneNumberPreferenceController"
+            settings:enableCopying="true"/>
     </PreferenceCategory>
 
     <PreferenceCategory
