@@ -16,6 +16,7 @@
 
 package com.android.settings.accessibility;
 
+import static android.provider.Settings.Secure.NAVIGATION_MODE;
 import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_2BUTTON;
 import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_GESTURAL;
 
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.when;
 import android.content.Context;
 import android.content.res.Resources;
 import android.icu.text.MessageFormat;
+import android.provider.Settings;
 import android.text.Html;
 
 import androidx.preference.PreferenceScreen;
@@ -46,7 +48,6 @@ import org.robolectric.RobolectricTestRunner;
 /** Tests for {@link AccessibilityButtonFooterPreferenceController}. */
 @RunWith(RobolectricTestRunner.class)
 public class AccessibilityButtonFooterPreferenceControllerTest {
-
     @Rule
     public final MockitoRule mockito = MockitoJUnit.rule();
     @Spy
@@ -70,23 +71,23 @@ public class AccessibilityButtonFooterPreferenceControllerTest {
 
     @Test
     public void displayPreference_navigationGestureEnabled_setCorrectTitle() {
-        when(mResources.getInteger(com.android.internal.R.integer.config_navBarInteractionMode))
-                .thenReturn(NAV_BAR_MODE_GESTURAL);
+        Settings.Secure.putIntForUser(mContext.getContentResolver(),
+                NAVIGATION_MODE, NAV_BAR_MODE_GESTURAL, mContext.getUserId());
 
+        assertThat(AccessibilityUtil.isGestureNavigateEnabled(mContext)).isTrue();
         mController.displayPreference(mScreen);
 
         assertThat(mPreference.getTitle().toString()).isEqualTo(
                 Html.fromHtml(
                         MessageFormat.format(mContext.getString(
-                                R.string.accessibility_button_gesture_description), 1, 2, 3),
+                                R.string.accessibility_button_description), 1, 2, 3),
                         Html.FROM_HTML_MODE_COMPACT).toString());
     }
 
     @Test
     public void displayPreference_navigationGestureDisabled_setCorrectTitle() {
-        when(mResources.getInteger(
-                com.android.internal.R.integer.config_navBarInteractionMode)).thenReturn(
-                NAV_BAR_MODE_2BUTTON);
+        Settings.Secure.putIntForUser(mContext.getContentResolver(),
+                NAVIGATION_MODE, NAV_BAR_MODE_2BUTTON, mContext.getUserId());
 
         mController.displayPreference(mScreen);
 

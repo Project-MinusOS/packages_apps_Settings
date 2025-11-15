@@ -1,12 +1,5 @@
 package: "com.android.settings.flags"
-container: "system"
-
-flag {
-    name: "show_factory_reset_cancel_button"
-    namespace: "android_settings"
-    description: "This flag controls whether to show a Cancel button when factory reset"
-    bug: "300634367"
-}
+container: "system_ext"
 
 flag {
     name: "mainline_module_explicit_intent"
@@ -62,4 +55,69 @@ flag {
   namespace: "android_settings"
   description: "Flag for all screens"
   bug: "323791114"
+}
+
+flag {
+  name: "catalyst_service"
+  namespace: "android_settings"
+  description: "Flag for catalyst service"
+  bug: "323791114"
+}
+
+flag {
+  name: "utils_return_user_handle_for_current_user_id"
+  namespace: "profile_experiences"
+  description: "Don't ignore the current user id when checking for existing profiles."
+  bug: "378471943"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+flag {
+  name: "extended_screenshots_exclude_nested_scrollables"
+  namespace: "systemui"
+  description: "Sets a flag on the main scrollable container to exclude any nested scrollable views as potential targets for extended screenshots."
+  bug: "399810823"
+  metadata {
+    purpose: PURPOSE_BUGFIX
+  }
+}
+
+flag {
+  name: "touchpad_settings_design_update"
+  namespace: "android_settings"
+  description: "All touchpad settings pages should either migrate to non-custom implementations or be updated"
+  bug: "400647661"
+}
+
+flag {
+  name: "three_finger_tap_app_launch"
+  namespace: "android_settings"
+  description: "Use three finger tap to open a custom app"
+  bug: "399645334"
+}
+
+flag {
+  name: "action_corner_customization"
+  namespace: "android_settings"
+  description: "Use action corners to trigger a chosen action"
+  bug: "412558312"
+}
+
+flag {
+  name: "homepage_tile_alert"
+  namespace: "android_settings"
+  description: "Enables alert indicator on homepage tiles"
+  bug: "403326850"
+}
+
+flag {
+  name: "fix_touchpad_and_mouse_settings_search_index"
+  namespace: "android_settings"
+  description: "Fix TouchpadAndMouseSettings indexing logic"
+  bug: "421850832"
+  metadata {
+      purpose: PURPOSE_BUGFIX
+    }
 }

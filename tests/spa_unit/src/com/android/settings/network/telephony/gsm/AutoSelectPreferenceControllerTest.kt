@@ -22,6 +22,7 @@ import android.provider.Settings
 import android.telephony.CarrierConfigManager
 import android.telephony.ServiceState
 import android.telephony.TelephonyManager
+import android.telephony.satellite.SatelliteManager
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
@@ -46,6 +47,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.`when`
+import org.mockito.junit.MockitoJUnit
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.doNothing
@@ -58,6 +61,9 @@ import org.mockito.kotlin.whenever
 @RunWith(AndroidJUnit4::class)
 class AutoSelectPreferenceControllerTest {
     @get:Rule
+    val mockito = MockitoJUnit.rule()
+
+    @get:Rule
     val composeTestRule = createComposeRule()
 
     private val mockTelephonyManager = mock<TelephonyManager> {
@@ -65,8 +71,12 @@ class AutoSelectPreferenceControllerTest {
         on { simOperatorName } doReturn OPERATOR_NAME
     }
 
+    private val mockSatelliteManager = mock<SatelliteManager> {
+    }
+
     private val context: Context = spy(ApplicationProvider.getApplicationContext()) {
         on { getSystemService(TelephonyManager::class.java) } doReturn mockTelephonyManager
+        on { getSystemService(SatelliteManager::class.java) } doReturn mockSatelliteManager
         doNothing().whenever(mock).startActivity(any())
     }
 
@@ -115,7 +125,6 @@ class AutoSelectPreferenceControllerTest {
             .assertIsOff()
     }
 
-
     @Test
     fun isEnabled_isRoaming_enabled() {
         serviceState.roaming = true
@@ -156,6 +165,64 @@ class AutoSelectPreferenceControllerTest {
 
         composeTestRule.onNodeWithText("Unavailable when connected to T-mobile")
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun isEnabled_isSatelliteSessionStartedAndSelectedSubForSatellite_disabled() {
+        controller.selectedNbIotSatelliteSubscriptionCallback
+            .onSelectedNbIotSatelliteSubscriptionChanged(SUB_ID)
+        controller.satelliteModemStateCallback
+            .onSatelliteModemStateChanged(SatelliteManager.SATELLITE_MODEM_STATE_CONNECTED)
+
+        composeTestRule.setContent {
+            controller.Content()
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.select_automatically))
+            .assertIsNotEnabled()
+    }
+
+    @Test
+    fun isEnabled_isSatelliteSessionNotStartedButIsSelectedSubForSatellite_enabled() {
+        controller.selectedNbIotSatelliteSubscriptionCallback
+            .onSelectedNbIotSatelliteSubscriptionChanged(SUB_ID)
+        controller.satelliteModemStateCallback
+            .onSatelliteModemStateChanged(SatelliteManager.SATELLITE_MODEM_STATE_OFF)
+
+        composeTestRule.setContent {
+            controller.Content()
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.select_automatically))
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun isEnabled_isSatelliteSessionStartedButNotSelectedSubForSatellite_enabled() {
+        controller.selectedNbIotSatelliteSubscriptionCallback
+            .onSelectedNbIotSatelliteSubscriptionChanged(0)
+        controller.satelliteModemStateCallback
+            .onSatelliteModemStateChanged(SatelliteManager.SATELLITE_MODEM_STATE_CONNECTED)
+
+        composeTestRule.setContent {
+            controller.Content()
+        }
+
+        composeTestRule.onNodeWithText(context.getString(R.string.select_automatically))
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun initialization_noSatellite_noCrash() {
+        `when`(context.getSystemService(SatelliteManager::class.java)).thenReturn(null)
+
+        AutoSelectPreferenceController(
+            context = context,
+            key = TEST_KEY,
+            allowedNetworkTypesFlowFactory = { emptyFlow() },
+            serviceStateFlowFactory = { flowOf(serviceState) },
+            getConfigForSubId = { carrierConfig },
+        ).init(subId = SUB_ID)
     }
 
     @Test

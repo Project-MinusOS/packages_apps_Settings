@@ -16,14 +16,12 @@
 
 package com.android.settings.bluetooth;
 
-import static android.bluetooth.BluetoothDevice.DEVICE_TYPE_LE;
 import static android.media.AudioManager.AUDIO_DEVICE_CATEGORY_CARKIT;
 import static android.media.AudioManager.AUDIO_DEVICE_CATEGORY_HEADPHONES;
 import static android.media.AudioManager.AUDIO_DEVICE_CATEGORY_HEARING_AID;
 import static android.media.AudioManager.AUDIO_DEVICE_CATEGORY_OTHER;
 import static android.media.AudioManager.AUDIO_DEVICE_CATEGORY_SPEAKER;
 import static android.media.AudioManager.AUDIO_DEVICE_CATEGORY_UNKNOWN;
-import static android.media.audio.Flags.automaticBtDeviceType;
 
 import android.content.Context;
 import android.media.AudioManager;
@@ -38,6 +36,7 @@ import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
+import com.android.settings.flags.Flags;
 import com.android.settingslib.bluetooth.A2dpProfile;
 import com.android.settingslib.bluetooth.CachedBluetoothDevice;
 import com.android.settingslib.bluetooth.LeAudioProfile;
@@ -107,15 +106,8 @@ public class BluetoothDetailsAudioDeviceTypeController extends BluetoothDetailsC
                     final int index = pref.findIndexOfValue(value);
                     if (index >= 0) {
                         pref.setSummary(pref.getEntries()[index]);
-                        if (automaticBtDeviceType()) {
-                            mAudioManager.setBluetoothAudioDeviceCategory(
-                                    mCachedDevice.getAddress(), Integer.parseInt(value));
-                        } else {
-                            mAudioManager.setBluetoothAudioDeviceCategory_legacy(
-                                    mCachedDevice.getAddress(),
-                                    mCachedDevice.getDevice().getType() == DEVICE_TYPE_LE,
-                                    Integer.parseInt(value));
-                        }
+                        mAudioManager.setBluetoothAudioDeviceCategory(
+                                mCachedDevice.getAddress(), Integer.parseInt(value));
                         mCachedDevice.onAudioDeviceCategoryChanged();
                     }
                 }
@@ -134,6 +126,13 @@ public class BluetoothDetailsAudioDeviceTypeController extends BluetoothDetailsC
     @Override
     protected void init(PreferenceScreen screen) {
         mProfilesContainer = screen.findPreference(getPreferenceKey());
+        if (Flags.enableBluetoothSettingsExpressiveDesign()) {
+            mProfilesContainer.setLayoutResource(
+                    com.android.settingslib.widget.category.R.layout
+                            .settingslib_expressive_untitled_preference_category);
+        } else {
+            mProfilesContainer.setLayoutResource(R.layout.preference_category_bluetooth_no_padding);
+        }
         refresh();
     }
 
@@ -153,6 +152,8 @@ public class BluetoothDetailsAudioDeviceTypeController extends BluetoothDetailsC
         mAudioDeviceTypePreference.setKey(KEY_BT_AUDIO_DEVICE_TYPE);
         mAudioDeviceTypePreference.setTitle(
                 mContext.getString(R.string.bluetooth_details_audio_device_types_title));
+        mAudioDeviceTypePreference.setDialogTitle(
+                mContext.getString(R.string.bluetooth_details_audio_device_types_title));
         mAudioDeviceTypePreference.setEntries(new CharSequence[]{
                 mContext.getString(R.string.bluetooth_details_audio_device_type_unknown),
                 mContext.getString(R.string.bluetooth_details_audio_device_type_speaker),
@@ -170,15 +171,8 @@ public class BluetoothDetailsAudioDeviceTypeController extends BluetoothDetailsC
                 Integer.toString(AUDIO_DEVICE_CATEGORY_OTHER),
         });
 
-        @AudioDeviceCategory int deviceCategory;
-        if (automaticBtDeviceType()) {
-            deviceCategory = mAudioManager.getBluetoothAudioDeviceCategory(
-                    mCachedDevice.getAddress());
-        } else {
-            deviceCategory = mAudioManager.getBluetoothAudioDeviceCategory_legacy(
-                    mCachedDevice.getAddress(),
-                    mCachedDevice.getDevice().getType() == DEVICE_TYPE_LE);
-        }
+        @AudioDeviceCategory int deviceCategory = mAudioManager.getBluetoothAudioDeviceCategory(
+                mCachedDevice.getAddress());
         if (DEBUG) {
             Log.v(TAG, "getBluetoothAudioDeviceCategory() device: "
                     + mCachedDevice.getDevice().getAnonymizedAddress()
@@ -186,10 +180,8 @@ public class BluetoothDetailsAudioDeviceTypeController extends BluetoothDetailsC
         }
         mAudioDeviceTypePreference.setValue(Integer.toString(deviceCategory));
 
-        if (automaticBtDeviceType()) {
-            if (mAudioManager.isBluetoothAudioDeviceCategoryFixed(mCachedDevice.getAddress())) {
-                mAudioDeviceTypePreference.setEnabled(false);
-            }
+        if (mAudioManager.isBluetoothAudioDeviceCategoryFixed(mCachedDevice.getAddress())) {
+            mAudioDeviceTypePreference.setEnabled(false);
         }
 
         mAudioDeviceTypePreference.setSummary(mAudioDeviceTypePreference.getEntry());

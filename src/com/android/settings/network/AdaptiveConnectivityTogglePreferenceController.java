@@ -23,14 +23,14 @@ import android.provider.Settings;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
-import com.android.settings.widget.SettingsMainSwitchPreferenceController;
+import com.android.settings.core.TogglePreferenceController;
 
 /**
- * {@link SettingsMainSwitchPreferenceController}
+ * {@link TogglePreferenceController}
  * that controls whether Adaptive connectivity option is enabled.
  */
-public class AdaptiveConnectivityTogglePreferenceController extends
-        SettingsMainSwitchPreferenceController {
+// LINT.IfChange
+public class AdaptiveConnectivityTogglePreferenceController extends TogglePreferenceController {
 
     private final WifiManager mWifiManager;
 
@@ -69,3 +69,4 @@ public class AdaptiveConnectivityTogglePreferenceController extends
         return R.string.menu_key_network;
     }
 }
+// LINT.ThenChange(AdaptiveConnectivityTogglePreference.kt)

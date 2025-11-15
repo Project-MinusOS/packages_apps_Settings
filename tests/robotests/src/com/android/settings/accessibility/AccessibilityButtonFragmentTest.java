@@ -19,6 +19,8 @@ package com.android.settings.accessibility;
 import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_2BUTTON;
 import static android.view.WindowManagerPolicyConstants.NAV_BAR_MODE_GESTURAL;
 
+import static com.android.internal.accessibility.common.ShortcutConstants.UserShortcutType.SOFTWARE;
+
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.Mockito.spy;
@@ -31,13 +33,14 @@ import android.os.Bundle;
 import android.platform.test.annotations.DisableFlags;
 import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
-import android.provider.Flags;
+import android.provider.Settings;
 
 import androidx.fragment.app.FragmentActivity;
 import androidx.preference.PreferenceManager;
 import androidx.preference.PreferenceScreen;
 import androidx.test.core.app.ApplicationProvider;
 
+import com.android.internal.accessibility.util.ShortcutUtils;
 import com.android.settings.R;
 import com.android.settings.testutils.XmlTestUtils;
 import com.android.settings.testutils.shadow.ShadowFragment;
@@ -90,23 +93,10 @@ public class AccessibilityButtonFragmentTest {
     }
 
     @Test
-    @DisableFlags(Flags.FLAG_A11Y_STANDALONE_GESTURE_ENABLED)
     public void onCreate_navigationGestureEnabled_setCorrectTitle() {
-        when(mResources.getInteger(com.android.internal.R.integer.config_navBarInteractionMode))
-                .thenReturn(NAV_BAR_MODE_GESTURAL);
-
-        mFragment.onAttach(mContext);
-        mFragment.onCreate(Bundle.EMPTY);
-
-        assertThat(mFragment.getActivity().getTitle().toString()).isEqualTo(
-                mContext.getString(R.string.accessibility_button_gesture_title));
-    }
-
-    @Test
-    @EnableFlags(Flags.FLAG_A11Y_STANDALONE_GESTURE_ENABLED)
-    public void onCreate_navigationGestureEnabled_gestureFlag_setCorrectTitle() {
-        when(mResources.getInteger(com.android.internal.R.integer.config_navBarInteractionMode))
-                .thenReturn(NAV_BAR_MODE_GESTURAL);
+        Settings.Secure.putIntForUser(
+                mContext.getContentResolver(), Settings.Secure.NAVIGATION_MODE,
+                NAV_BAR_MODE_GESTURAL, mContext.getUserId());
 
         mFragment.onAttach(mContext);
         mFragment.onCreate(Bundle.EMPTY);
@@ -117,8 +107,9 @@ public class AccessibilityButtonFragmentTest {
 
     @Test
     public void onCreate_navigationBarEnabled_setCorrectTitle() {
-        when(mResources.getInteger(com.android.internal.R.integer.config_navBarInteractionMode))
-                .thenReturn(NAV_BAR_MODE_2BUTTON);
+        Settings.Secure.putIntForUser(
+                mContext.getContentResolver(), Settings.Secure.NAVIGATION_MODE,
+                NAV_BAR_MODE_2BUTTON, mContext.getUserId());
 
         mFragment.onAttach(mContext);
         mFragment.onCreate(Bundle.EMPTY);
@@ -128,14 +119,30 @@ public class AccessibilityButtonFragmentTest {
     }
 
     @Test
-    public void getNonIndexableKeys_existInXmlLayout() {
+    public void getNonIndexableKeys_noTargets_doesNotExistInXmlLayout() {
+        Settings.Secure.putStringForUser(mContext.getContentResolver(),
+                ShortcutUtils.convertToKey(SOFTWARE), "", mContext.getUserId());
         final List<String> niks = AccessibilityButtonFragment.SEARCH_INDEX_DATA_PROVIDER
                 .getNonIndexableKeys(mContext);
         final List<String> keys =
                 XmlTestUtils.getKeysFromPreferenceXml(mContext,
                         R.xml.accessibility_button_settings);
 
-        assertThat(keys).containsAtLeastElementsIn(niks);
+        assertThat(keys).isNotNull();
+        assertThat(niks).containsAtLeastElementsIn(keys);
+    }
+
+    @Test
+    public void getNonIndexableKeys_hasTargets_expectedKeys() {
+        Settings.Secure.putStringForUser(mContext.getContentResolver(),
+                ShortcutUtils.convertToKey(SOFTWARE), "Foo", mContext.getUserId());
+        final List<String> niks = AccessibilityButtonFragment.SEARCH_INDEX_DATA_PROVIDER
+                .getNonIndexableKeys(mContext);
+
+        // Some keys should show up anyway, as they're flagged as unsearchable in the xml.
+        assertThat(niks).containsAtLeast(
+                "accessibility_button_preview",
+                "accessibility_button_footer");
     }
 
     private static class TestAccessibilityButtonFragment extends AccessibilityButtonFragment {

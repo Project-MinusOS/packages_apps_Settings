@@ -24,6 +24,7 @@ import static com.android.settings.accessibility.AccessibilityUtil.getScreenWidt
 import static com.google.common.primitives.Ints.max;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.graphics.Paint.FontMetrics;
 import android.graphics.drawable.GradientDrawable;
 import android.util.AttributeSet;
@@ -39,6 +40,8 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceViewHolder;
 
 import com.android.settings.R;
+import com.android.settingslib.Utils;
+import com.android.settingslib.widget.GroupSectionDividerMixin;
 
 import com.google.common.primitives.Floats;
 import com.google.common.primitives.Ints;
@@ -54,7 +57,7 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 /** Preference that easier preview by matching name to color. */
-public final class PaletteListPreference extends Preference {
+public final class PaletteListPreference extends Preference implements GroupSectionDividerMixin {
 
     private final List<Integer> mGradientColors = new ArrayList<>();
     private final List<Float> mGradientOffsets = new ArrayList<>();
@@ -128,6 +131,8 @@ public final class PaletteListPreference extends Preference {
         final List<Integer> paletteColors = getPaletteColors(context);
         final List<String> paletteData = getPaletteData(context);
 
+        final ColorStateList textColor =
+                Utils.getColorAttr(getContext(), android.R.attr.textColorPrimary);
         final float textPadding =
                 context.getResources().getDimension(R.dimen.accessibility_layout_margin_start_end);
         final String maxLengthData =
@@ -143,6 +148,7 @@ public final class PaletteListPreference extends Preference {
         for (int i = 0; i < paletteData.size(); ++i) {
             final TextView textView = new TextView(context);
             textView.setText(paletteData.get(i));
+            textView.setTextColor(textColor);
             textView.setHeight(paletteItemHeight);
             textView.setPaddingRelative(Math.round(textPadding), 0, 0, 0);
             textView.setGravity(Gravity.CENTER_VERTICAL);

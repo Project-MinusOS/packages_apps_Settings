@@ -18,6 +18,7 @@ package com.android.settings.bluetooth;
 
 import static android.bluetooth.BluetoothDevice.METADATA_MODEL_NAME;
 
+import android.app.settings.SettingsEnums;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
@@ -26,7 +27,6 @@ import android.sysprop.BluetoothProperties;
 import android.text.TextUtils;
 import android.util.Log;
 
-import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
@@ -83,6 +83,10 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
     private static final boolean LE_AUDIO_TOGGLE_VISIBLE_DEFAULT_VALUE = true;
     private static final String LE_AUDIO_TOGGLE_VISIBLE_PROPERTY =
             "persist.bluetooth.leaudio.toggle_visible";
+    private static final String BYPASS_LE_AUDIO_ALLOWLIST_PROPERTY =
+            "persist.bluetooth.leaudio.bypass_allow_list";
+    private static final String LE_AUDIO_TOGGLE_VISIBLE_FOR_ASHA_PROPERTY =
+            "bluetooth.leaudio.toggle_visible_for_asha";
 
     private Set<String> mInvisibleProfiles = Collections.emptySet();
     private final AtomicReference<Set<String>> mAdditionalInvisibleProfiles =
@@ -96,6 +100,7 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             new HashMap<String, List<CachedBluetoothDevice>>();
     private boolean mIsLeAudioToggleEnabled = false;
     private boolean mIsLeAudioOnlyDevice = false;
+    private boolean mHasExtraSpace;
 
     @VisibleForTesting
     PreferenceCategory mProfilesContainer;
@@ -105,22 +110,33 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             PreferenceFragmentCompat fragment,
             LocalBluetoothManager manager,
             CachedBluetoothDevice device,
-            Lifecycle lifecycle,
-            @Nullable List<String> invisibleProfiles) {
+            Lifecycle lifecycle) {
         super(context, fragment, device, lifecycle);
         mManager = manager;
         mProfileManager = mManager.getProfileManager();
         mCachedDevice = device;
         mCachedDeviceGroup = Utils.findAllCachedBluetoothDevicesByGroupId(mManager, mCachedDevice);
+    }
+
+    /** Sets the profiles to be hidden. */
+    public void setInvisibleProfiles(List<String> invisibleProfiles) {
         if (invisibleProfiles != null) {
             mInvisibleProfiles = Set.copyOf(invisibleProfiles);
         }
+        mProfilesContainer.setVisible(false);
+        refresh();
     }
 
     @Override
     protected void init(PreferenceScreen screen) {
-        mProfilesContainer = (PreferenceCategory)screen.findPreference(getPreferenceKey());
-        mProfilesContainer.setLayoutResource(R.layout.preference_bluetooth_profile_category);
+        mProfilesContainer = (PreferenceCategory) screen.findPreference(getPreferenceKey());
+        if (Flags.enableBluetoothSettingsExpressiveDesign()) {
+            mProfilesContainer.setLayoutResource(
+                    com.android.settingslib.widget.category.R.layout
+                            .settingslib_expressive_untitled_preference_category);
+        } else {
+            mProfilesContainer.setLayoutResource(R.layout.preference_bluetooth_profile_category);
+        }
         // Call refresh here even though it will get called later in onResume, to avoid the
         // list of switches appearing to "pop" into the page.
         refresh();
@@ -363,12 +379,28 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
         // Remove hearing aids toggle anyway since showing the toggle will confuse users
         if (hearingAidSupported) {
             result.remove(mManager.getProfileManager().getHearingAidProfile());
+            if (leAudioSupported
+                    && !SystemProperties.getBoolean(BYPASS_LE_AUDIO_ALLOWLIST_PROPERTY, false)
+                    && !SystemProperties.getBoolean(
+                            LE_AUDIO_TOGGLE_VISIBLE_FOR_ASHA_PROPERTY, true)) {
+                result.remove(mManager.getProfileManager().getLeAudioProfile());
+            }
         }
         if (leAudioSupported && !classicAudioSupported && !hearingAidSupported) {
             mIsLeAudioOnlyDevice = true;
         }
         Log.d(TAG, "getProfiles:Map:" + mProfileDeviceMap);
         return result;
+    }
+
+    private boolean isCurrentDeviceInOrByPassAllowList() {
+        if (!SystemProperties.getBoolean(LE_AUDIO_CONNECTION_BY_DEFAULT_PROPERTY, true)) {
+            return false;
+        }
+        return SystemProperties.getBoolean(BYPASS_LE_AUDIO_ALLOWLIST_PROPERTY, false)
+                || isModelNameInAllowList(
+                BluetoothUtils.getStringMetaData(
+                        mCachedDevice.getDevice(), METADATA_MODEL_NAME));
     }
 
     /**
@@ -382,31 +414,11 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             return;
         }
 
-        LocalBluetoothProfile asha = mProfileManager.getHearingAidProfile();
-        LocalBluetoothProfile broadcastAssistant =
-                mProfileManager.getLeAudioBroadcastAssistantProfile();
-
-        for (CachedBluetoothDevice leAudioDevice : mProfileDeviceMap.get(profile.toString())) {
-            Log.d(TAG,
-                    "device:" + leAudioDevice.getDevice().getAnonymizedAddress()
-                            + " disable LE profile");
-            profile.setEnabled(leAudioDevice.getDevice(), false);
-            if (asha != null) {
-                asha.setEnabled(leAudioDevice.getDevice(), true);
-            }
-            if (broadcastAssistant != null) {
-                Log.d(TAG,
-                        "device:" + leAudioDevice.getDevice().getAnonymizedAddress()
-                                + " disable LE broadcast assistant profile");
-                broadcastAssistant.setEnabled(leAudioDevice.getDevice(), false);
-            }
-        }
-
-        if (!SystemProperties.getBoolean(ENABLE_DUAL_MODE_AUDIO, false)) {
-            Log.i(TAG, "Enabling classic audio profiles because dual mode is disabled");
-            enableProfileAfterUserDisablesLeAudio(mProfileManager.getA2dpProfile());
-            enableProfileAfterUserDisablesLeAudio(mProfileManager.getHeadsetProfile());
-        }
+        mMetricsFeatureProvider.action(
+                mContext,
+                SettingsEnums.ACTION_BLUETOOTH_PROFILE_LE_AUDIO_OFF,
+                isCurrentDeviceInOrByPassAllowList());
+        Utils.setLeAudioEnabled(mManager, List.copyOf(mCachedDeviceGroup), false);
     }
 
     /**
@@ -420,74 +432,11 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             return;
         }
 
-        if (!SystemProperties.getBoolean(ENABLE_DUAL_MODE_AUDIO, false)) {
-            Log.i(TAG, "Disabling classic audio profiles because dual mode is disabled");
-            disableProfileBeforeUserEnablesLeAudio(mProfileManager.getA2dpProfile());
-            disableProfileBeforeUserEnablesLeAudio(mProfileManager.getHeadsetProfile());
-        }
-        LocalBluetoothProfile asha = mProfileManager.getHearingAidProfile();
-        LocalBluetoothProfile broadcastAssistant =
-                mProfileManager.getLeAudioBroadcastAssistantProfile();
-
-        for (CachedBluetoothDevice leAudioDevice : mProfileDeviceMap.get(profile.toString())) {
-            Log.d(TAG,
-                    "device:" + leAudioDevice.getDevice().getAnonymizedAddress()
-                            + " enable LE profile");
-            profile.setEnabled(leAudioDevice.getDevice(), true);
-            if (asha != null) {
-                asha.setEnabled(leAudioDevice.getDevice(), false);
-            }
-            if (broadcastAssistant != null) {
-                Log.d(TAG,
-                        "device:" + leAudioDevice.getDevice().getAnonymizedAddress()
-                                + " enable LE broadcast assistant profile");
-                broadcastAssistant.setEnabled(leAudioDevice.getDevice(), true);
-            }
-        }
-    }
-
-    private void disableProfileBeforeUserEnablesLeAudio(LocalBluetoothProfile profile) {
-        if (profile != null && mProfileDeviceMap.get(profile.toString()) != null) {
-            Log.d(TAG, "Disable " + profile.toString() + " before user enables LE");
-            for (CachedBluetoothDevice profileDevice : mProfileDeviceMap.get(profile.toString())) {
-                if (profile.isEnabled(profileDevice.getDevice())) {
-                    Log.d(TAG, "The " + profileDevice.getDevice().getAnonymizedAddress() + ":"
-                            + profile.toString() + " set disable");
-                    profile.setEnabled(profileDevice.getDevice(), false);
-                } else {
-                    Log.d(TAG, "The " + profileDevice.getDevice().getAnonymizedAddress() + ":"
-                            + profile.toString() + " profile is disabled. Do nothing.");
-                }
-            }
-        } else {
-            if (profile == null) {
-                Log.w(TAG, "profile is null");
-            } else {
-                Log.w(TAG, profile.toString() + " is not in " + mProfileDeviceMap);
-            }
-        }
-    }
-
-    private void enableProfileAfterUserDisablesLeAudio(LocalBluetoothProfile profile) {
-        if (profile != null && mProfileDeviceMap.get(profile.toString()) != null) {
-            Log.d(TAG, "enable " + profile.toString() + "after user disables LE");
-            for (CachedBluetoothDevice profileDevice : mProfileDeviceMap.get(profile.toString())) {
-                if (!profile.isEnabled(profileDevice.getDevice())) {
-                    Log.d(TAG, "The " + profileDevice.getDevice().getAnonymizedAddress() + ":"
-                            + profile.toString() + " set enable");
-                    profile.setEnabled(profileDevice.getDevice(), true);
-                } else {
-                    Log.d(TAG, "The " + profileDevice.getDevice().getAnonymizedAddress() + ":"
-                            + profile.toString() + " profile is enabled. Do nothing.");
-                }
-            }
-        } else {
-            if (profile == null) {
-                Log.w(TAG, "profile is null");
-            } else {
-                Log.w(TAG, profile.toString() + " is not in " + mProfileDeviceMap);
-            }
-        }
+        mMetricsFeatureProvider.action(
+                mContext,
+                SettingsEnums.ACTION_BLUETOOTH_PROFILE_LE_AUDIO_ON,
+                isCurrentDeviceInOrByPassAllowList());
+        Utils.setLeAudioEnabled(mManager, List.copyOf(mCachedDeviceGroup), true);
     }
 
     /**
@@ -581,7 +530,9 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
                                     .getBluetoothFeatureProvider()
                                     .getInvisibleProfilePreferenceKeys(
                                             mContext, mCachedDevice.getDevice()));
-                    ThreadUtils.postOnMainThread(this::refreshUi);
+                    ThreadUtils.postOnMainThread(() -> {
+                        refreshUi();
+                    });
                 });
     }
 
@@ -606,15 +557,21 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             }
         }
 
-        Preference preference = mProfilesContainer.findPreference(KEY_BOTTOM_PREFERENCE);
-        if (preference == null) {
-            preference = new Preference(mContext);
-            preference.setLayoutResource(R.layout.preference_bluetooth_profile_category);
-            preference.setEnabled(false);
-            preference.setKey(KEY_BOTTOM_PREFERENCE);
-            preference.setOrder(ORDINAL);
-            preference.setSelectable(false);
-            mProfilesContainer.addPreference(preference);
+        if (!Flags.enableBluetoothSettingsExpressiveDesign()) {
+            Preference preference = mProfilesContainer.findPreference(KEY_BOTTOM_PREFERENCE);
+            if (preference == null) {
+                preference = new Preference(mContext);
+                if (mHasExtraSpace) {
+                    preference.setLayoutResource(R.layout.preference_bluetooth_profile_category);
+                } else {
+                    preference.setLayoutResource(R.layout.preference_category_bluetooth_no_padding);
+                }
+                preference.setEnabled(false);
+                preference.setKey(KEY_BOTTOM_PREFERENCE);
+                preference.setOrder(ORDINAL);
+                preference.setSelectable(false);
+                mProfilesContainer.addPreference(preference);
+            }
         }
 
         Set<String> additionalInvisibleProfiles = mAdditionalInvisibleProfiles.get();
@@ -623,10 +580,13 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             combinedInvisibleProfiles.addAll(additionalInvisibleProfiles);
         }
         Log.i(TAG, "Invisible profiles: " + combinedInvisibleProfiles);
+        boolean hasVisibleProfile = false;
         for (int i = 0; i < mProfilesContainer.getPreferenceCount(); ++i) {
             Preference pref = mProfilesContainer.getPreference(i);
             pref.setVisible(pref.isVisible() && !combinedInvisibleProfiles.contains(pref.getKey()));
+            hasVisibleProfile = hasVisibleProfile || pref.isVisible();
         }
+        mProfilesContainer.setVisible(hasVisibleProfile);
     }
 
     @Override

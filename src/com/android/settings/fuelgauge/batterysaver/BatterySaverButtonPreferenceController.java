@@ -29,6 +29,7 @@ import android.provider.SettingsSlicesContract;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
+import com.android.settings.contract.SettingsContractKt;
 import com.android.settings.core.TogglePreferenceController;
 import com.android.settings.fuelgauge.BatterySaverReceiver;
 import com.android.settingslib.core.lifecycle.LifecycleObserver;
@@ -38,6 +39,7 @@ import com.android.settingslib.fuelgauge.BatterySaverUtils;
 import com.android.settingslib.widget.MainSwitchPreference;
 
 /** Controller to update the battery saver button */
+// LINT.IfChange
 public class BatterySaverButtonPreferenceController extends TogglePreferenceController
         implements LifecycleObserver, OnStart, OnStop, BatterySaverReceiver.BatterySaverListener {
     private static final long SWITCH_ANIMATION_DURATION = 350L;
@@ -72,7 +74,7 @@ public class BatterySaverButtonPreferenceController extends TogglePreferenceCont
                 .scheme(ContentResolver.SCHEME_CONTENT)
                 .authority(SettingsSlicesContract.AUTHORITY)
                 .appendPath(SettingsSlicesContract.PATH_SETTING_ACTION)
-                .appendPath(SettingsSlicesContract.KEY_BATTERY_SAVER)
+                .appendPath(SettingsContractKt.KEY_BATTERY_SAVER)
                 .build();
     }
 
@@ -91,7 +93,7 @@ public class BatterySaverButtonPreferenceController extends TogglePreferenceCont
     public void displayPreference(PreferenceScreen screen) {
         super.displayPreference(screen);
         mPreference = screen.findPreference(getPreferenceKey());
-        mPreference.updateStatus(isChecked());
+        mPreference.setChecked(isChecked());
     }
 
     @Override
@@ -129,3 +131,4 @@ public class BatterySaverButtonPreferenceController extends TogglePreferenceCont
         }
     }
 }
+// LINT.ThenChange(BatterySaverPreference.kt)

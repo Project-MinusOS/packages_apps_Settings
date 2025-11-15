@@ -22,9 +22,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
 import com.android.settings.R
+import com.android.settings.Utils
 import com.android.settings.flags.Flags
-import com.android.settings.network.SubscriptionUtil
 import com.android.settingslib.spa.framework.util.collectLatestWithLifecycle
+import com.android.settingslib.spaprivileged.framework.common.userManager
 
 /** Preference controller for "Phone number" */
 class MobileNetworkPhoneNumberPreferenceController
@@ -41,13 +42,14 @@ constructor(
         mSubId = subId
     }
 
-    override fun getAvailabilityStatus(subId: Int): Int =
-        when {
-            !Flags.isDualSimOnboardingEnabled() -> CONDITIONALLY_UNAVAILABLE
-            SubscriptionManager.isValidSubscriptionId(subId) &&
-                SubscriptionUtil.isSimHardwareVisible(mContext) -> AVAILABLE
-            else -> CONDITIONALLY_UNAVAILABLE
-        }
+    override fun getAvailabilityStatus(subId: Int): Int = when {
+        !Utils.isMobileDataCapable(mContext)
+            && !Utils.isVoiceCapable(mContext) -> UNSUPPORTED_ON_DEVICE
+        !mContext.userManager.isAdminUser -> DISABLED_FOR_USER
+        !Flags.isDualSimOnboardingEnabled()
+            || !SubscriptionManager.isValidSubscriptionId(subId) -> CONDITIONALLY_UNAVAILABLE
+        else -> AVAILABLE
+    }
 
     override fun displayPreference(screen: PreferenceScreen) {
         super.displayPreference(screen)

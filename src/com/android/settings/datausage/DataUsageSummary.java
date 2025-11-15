@@ -22,12 +22,7 @@ import android.os.Bundle;
 import android.os.UserManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
-import android.text.BidiFormatter;
-import android.text.Spannable;
-import android.text.SpannableString;
 import android.text.TextUtils;
-import android.text.format.Formatter;
-import android.text.style.RelativeSizeSpan;
 import android.util.EventLog;
 import android.util.Log;
 
@@ -36,6 +31,7 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
+import com.android.settings.Utils;
 import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.datausage.lib.DataUsageLib;
 import com.android.settings.network.ProxySubscriptionManager;
@@ -67,10 +63,6 @@ public class DataUsageSummary extends DashboardFragment {
         return R.string.help_url_data_usage;
     }
 
-    public boolean isSimHardwareVisible(Context context) {
-        return SubscriptionUtil.isSimHardwareVisible(context);
-    }
-
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
@@ -82,8 +74,9 @@ public class DataUsageSummary extends DashboardFragment {
             return;
         }
 
-        if (!isSimHardwareVisible(context) ||
-            MobileNetworkUtils.isMobileNetworkUserRestricted(context)) {
+        // Do not return early if device doesn't support mobile data. That condition
+        // is later on handled via the hasMobileData variable.
+        if (MobileNetworkUtils.isMobileNetworkUserRestricted(context)) {
             finish();
             return;
         }
@@ -133,8 +126,8 @@ public class DataUsageSummary extends DashboardFragment {
     protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
         final Activity activity = getActivity();
         final ArrayList<AbstractPreferenceController> controllers = new ArrayList<>();
-        if (!isSimHardwareVisible(context) ||
-            MobileNetworkUtils.isMobileNetworkUserRestricted(context)) {
+        if (!Utils.isMobileDataCapable(context)
+                || MobileNetworkUtils.isMobileNetworkUserRestricted(context)) {
             return controllers;
         }
         final var mSummaryController = new DataUsageSummaryPreferenceController(activity,
@@ -209,34 +202,6 @@ public class DataUsageSummary extends DashboardFragment {
     public void onResume() {
         super.onResume();
         updateState();
-    }
-
-    @VisibleForTesting
-    static CharSequence formatUsage(Context context, String template, long usageLevel) {
-        final float LARGER_SIZE = 1.25f * 1.25f;  // (1/0.8)^2
-        final float SMALLER_SIZE = 1.0f / LARGER_SIZE;  // 0.8^2
-        return formatUsage(context, template, usageLevel, LARGER_SIZE, SMALLER_SIZE);
-    }
-
-    static CharSequence formatUsage(Context context, String template, long usageLevel,
-                                    float larger, float smaller) {
-        final int FLAGS = Spannable.SPAN_INCLUSIVE_INCLUSIVE;
-
-        final Formatter.BytesResult usedResult = Formatter.formatBytes(context.getResources(),
-                usageLevel, Formatter.FLAG_CALCULATE_ROUNDED | Formatter.FLAG_IEC_UNITS);
-        final SpannableString enlargedValue = new SpannableString(usedResult.value);
-        enlargedValue.setSpan(new RelativeSizeSpan(larger), 0, enlargedValue.length(), FLAGS);
-
-        final SpannableString amountTemplate = new SpannableString(
-                context.getString(com.android.internal.R.string.fileSizeSuffix)
-                .replace("%1$s", "^1").replace("%2$s", "^2"));
-        final CharSequence formattedUsage = TextUtils.expandTemplate(amountTemplate,
-                enlargedValue, usedResult.units);
-
-        final SpannableString fullTemplate = new SpannableString(template);
-        fullTemplate.setSpan(new RelativeSizeSpan(smaller), 0, fullTemplate.length(), FLAGS);
-        return TextUtils.expandTemplate(fullTemplate,
-                BidiFormatter.getInstance().unicodeWrap(formattedUsage.toString()));
     }
 
     private void updateState() {

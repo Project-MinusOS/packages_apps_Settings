@@ -20,6 +20,7 @@ import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.Dialog;
 import android.app.admin.DevicePolicyManager;
 import android.app.settings.SettingsEnums;
@@ -34,6 +35,7 @@ import android.content.pm.PackageManager.NameNotFoundException;
 import android.hardware.usb.IUsbManager;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -129,8 +131,10 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
     protected String retrieveAppEntry() {
         final Bundle args = getArguments();
         mPackageName = (args != null) ? args.getString(ARG_PACKAGE_NAME) : null;
-        Intent intent = (args == null) ?
-                getIntent() : (Intent) args.getParcelable("intent");
+        Intent intent = args != null ? args.getParcelable("intent", Intent.class) : null;
+        if (intent == null) {
+            intent = getIntent();
+        }
         if (mPackageName == null) {
             if (intent != null && intent.getData() != null) {
                 mPackageName = intent.getData().getSchemeSpecificPart();
@@ -176,20 +180,19 @@ public abstract class AppInfoBase extends SettingsPreferenceFragment
         if (!(activity instanceof SettingsActivity)) {
             return false;
         }
-        final String callingPackageName =
-                ((SettingsActivity) activity).getInitialCallingPackage();
-
-        if (TextUtils.isEmpty(callingPackageName)) {
-            Log.w(TAG, "Not able to get calling package name for permission check");
+        try {
+            int callerUid = ActivityManager.getService().getLaunchedFromUid(
+                    activity.getActivityToken());
+            if (ActivityManager.checkUidPermission(Manifest.permission.INTERACT_ACROSS_USERS_FULL,
+                    callerUid) != PackageManager.PERMISSION_GRANTED) {
+                Log.w(TAG, "Uid " + callerUid + " does not have required permission "
+                        + Manifest.permission.INTERACT_ACROSS_USERS_FULL);
+                return false;
+            }
+            return true;
+        } catch (RemoteException e) {
             return false;
         }
-        if (mPm.checkPermission(Manifest.permission.INTERACT_ACROSS_USERS_FULL, callingPackageName)
-                != PackageManager.PERMISSION_GRANTED) {
-            Log.w(TAG, "Package " + callingPackageName + " does not have required permission "
-                    + Manifest.permission.INTERACT_ACROSS_USERS_FULL);
-            return false;
-        }
-        return true;
     }
 
     protected void setIntentAndFinish(boolean appChanged) {

@@ -17,6 +17,7 @@ package com.android.settings.connecteddevice;
 
 import static com.android.settings.core.BasePreferenceController.AVAILABLE_UNSEARCHABLE;
 import static com.android.settings.core.BasePreferenceController.UNSUPPORTED_ON_DEVICE;
+import static com.android.settings.flags.Flags.FLAG_DISPLAY_TOPOLOGY_PANE_IN_DISPLAY_LIST;
 import static com.android.settings.flags.Flags.FLAG_RESOLUTION_AND_ENABLE_CONNECTED_DISPLAY_SETTING;
 import static com.android.settings.flags.Flags.FLAG_ROTATION_CONNECTED_DISPLAY_SETTING;
 
@@ -28,13 +29,15 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.robolectric.Shadows.shadowOf;
 
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.hardware.input.InputManager;
-import android.platform.test.annotations.EnableFlags;
+import android.media.AudioManager;
+import android.os.Looper;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.util.FeatureFlagUtils;
 import android.view.InputDevice;
@@ -53,7 +56,6 @@ import com.android.settings.connecteddevice.stylus.StylusDeviceUpdater;
 import com.android.settings.connecteddevice.usb.ConnectedUsbDeviceUpdater;
 import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.flags.FakeFeatureFlagsImpl;
-import com.android.settings.flags.Flags;
 import com.android.settings.testutils.shadow.ShadowBluetoothAdapter;
 import com.android.settings.testutils.shadow.ShadowBluetoothUtils;
 import com.android.settingslib.bluetooth.CachedBluetoothDevice;
@@ -79,41 +81,35 @@ import java.util.ArrayList;
 import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(shadows = {ShadowApplicationPackageManager.class, ShadowBluetoothUtils.class,
-        ShadowBluetoothAdapter.class})
+@Config(
+        shadows = {
+            ShadowApplicationPackageManager.class,
+            ShadowBluetoothUtils.class,
+            ShadowBluetoothAdapter.class
+        })
 public class ConnectedDeviceGroupControllerTest {
 
     private static final String PREFERENCE_KEY_1 = "pref_key_1";
     private static final String DEVICE_NAME = "device";
 
-    @Mock
-    private DashboardFragment mDashboardFragment;
-    @Mock
-    private ExternalDisplayUpdater mExternalDisplayUpdater;
-    @Mock
-    private ConnectedBluetoothDeviceUpdater mConnectedBluetoothDeviceUpdater;
-    @Mock
-    private ConnectedUsbDeviceUpdater mConnectedUsbDeviceUpdater;
-    @Mock
-    private DockUpdater mConnectedDockUpdater;
-    @Mock
-    private StylusDeviceUpdater mStylusDeviceUpdater;
-    @Mock
-    private PreferenceScreen mPreferenceScreen;
+    @Mock private DashboardFragment mDashboardFragment;
+    @Mock private ExternalDisplayUpdater mExternalDisplayUpdater;
+    @Mock private ConnectedBluetoothDeviceUpdater mConnectedBluetoothDeviceUpdater;
+    @Mock private ConnectedUsbDeviceUpdater mConnectedUsbDeviceUpdater;
+    @Mock private DockUpdater mConnectedDockUpdater;
+    @Mock private StylusDeviceUpdater mStylusDeviceUpdater;
+    @Mock private PreferenceScreen mPreferenceScreen;
+
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     private PreferenceManager mPreferenceManager;
-    @Mock
-    private InputManager mInputManager;
-    @Mock
-    private CachedBluetoothDeviceManager mCachedDeviceManager;
-    @Mock
-    private LocalBluetoothManager mLocalBluetoothManager;
-    @Mock
-    private CachedBluetoothDevice mCachedDevice;
-    @Mock
-    private BluetoothDevice mDevice;
-    @Mock
-    private Resources mResources;
+
+    @Mock private InputManager mInputManager;
+    @Mock private CachedBluetoothDeviceManager mCachedDeviceManager;
+    @Mock private LocalBluetoothManager mLocalBluetoothManager;
+    @Mock private CachedBluetoothDevice mCachedDevice;
+    @Mock private BluetoothDevice mDevice;
+    @Mock private Resources mResources;
+    @Mock private AudioManager mAudioManager;
     private final FakeFeatureFlagsImpl mFakeFeatureFlags = new FakeFeatureFlagsImpl();
 
     private ShadowApplicationPackageManager mPackageManager;
@@ -122,27 +118,27 @@ public class ConnectedDeviceGroupControllerTest {
     private Preference mPreference;
     private ConnectedDeviceGroupController mConnectedDeviceGroupController;
 
-    @Rule
-    public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
+    @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
 
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
+        mFakeFeatureFlags.setFlag(FLAG_DISPLAY_TOPOLOGY_PANE_IN_DISPLAY_LIST, false);
         mFakeFeatureFlags.setFlag(FLAG_ROTATION_CONNECTED_DISPLAY_SETTING, true);
         mFakeFeatureFlags.setFlag(FLAG_RESOLUTION_AND_ENABLE_CONNECTED_DISPLAY_SETTING, true);
 
         mContext = spy(ApplicationProvider.getApplicationContext());
         mPreference = new Preference(mContext);
         mPreference.setKey(PREFERENCE_KEY_1);
-        mPackageManager = (ShadowApplicationPackageManager) Shadows.shadowOf(
-                mContext.getPackageManager());
+        mPackageManager =
+                (ShadowApplicationPackageManager) Shadows.shadowOf(mContext.getPackageManager());
         mPreferenceGroup = spy(new PreferenceScreen(mContext, null));
         when(mPreferenceGroup.getPreferenceManager()).thenReturn(mPreferenceManager);
         doReturn(mContext).when(mDashboardFragment).getContext();
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, true);
         when(mContext.getSystemService(InputManager.class)).thenReturn(mInputManager);
         when(mContext.getResources()).thenReturn(mResources);
-        when(mInputManager.getInputDeviceIds()).thenReturn(new int[]{});
+        when(mInputManager.getInputDeviceIds()).thenReturn(new int[] {});
 
         ShadowBluetoothUtils.sLocalBluetoothManager = mLocalBluetoothManager;
         mLocalBluetoothManager = Utils.getLocalBtManager(mContext);
@@ -151,18 +147,24 @@ public class ConnectedDeviceGroupControllerTest {
         mConnectedDeviceGroupController = spy(new ConnectedDeviceGroupController(mContext));
         when(mConnectedDeviceGroupController.getFeatureFlags()).thenReturn(mFakeFeatureFlags);
 
-        mConnectedDeviceGroupController.init(mExternalDisplayUpdater,
-                mConnectedBluetoothDeviceUpdater, mConnectedUsbDeviceUpdater, mConnectedDockUpdater,
+        mConnectedDeviceGroupController.init(
+                mExternalDisplayUpdater,
+                mConnectedBluetoothDeviceUpdater,
+                mConnectedUsbDeviceUpdater,
+                mConnectedDockUpdater,
                 mStylusDeviceUpdater);
         mConnectedDeviceGroupController.mPreferenceGroup = mPreferenceGroup;
 
         when(mCachedDevice.getName()).thenReturn(DEVICE_NAME);
         when(mCachedDevice.getDevice()).thenReturn(mDevice);
-        when(mCachedDeviceManager.getCachedDevicesCopy()).thenReturn(
-                ImmutableList.of(mCachedDevice));
+        when(mCachedDeviceManager.getCachedDevicesCopy())
+                .thenReturn(ImmutableList.of(mCachedDevice));
 
-        FeatureFlagUtils.setEnabled(mContext, FeatureFlagUtils.SETTINGS_SHOW_STYLUS_PREFERENCES,
-                true);
+        when(mContext.getSystemService(AudioManager.class)).thenReturn(mAudioManager);
+        when(mAudioManager.getMode()).thenReturn(AudioManager.MODE_NORMAL);
+
+        FeatureFlagUtils.setEnabled(
+                mContext, FeatureFlagUtils.SETTINGS_SHOW_STYLUS_PREFERENCES, true);
         when(mPreferenceScreen.getContext()).thenReturn(mContext);
     }
 
@@ -209,8 +211,11 @@ public class ConnectedDeviceGroupControllerTest {
     public void onStart_shouldRegisterUpdaters() {
         // register the callback in onStart()
         mConnectedDeviceGroupController.onStart();
+        shadowOf(Looper.getMainLooper()).idle();
 
         verify(mExternalDisplayUpdater).registerCallback();
+        verify(mExternalDisplayUpdater).refreshPreference();
+        verify(mConnectedBluetoothDeviceUpdater).setIsOngoingCall(false);
         verify(mConnectedBluetoothDeviceUpdater).registerCallback();
         verify(mConnectedUsbDeviceUpdater).registerCallback();
         verify(mConnectedDockUpdater).registerCallback();
@@ -236,11 +241,11 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, false);
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, null, null);
+        mConnectedDeviceGroupController.init(
+                null, mConnectedBluetoothDeviceUpdater, mConnectedUsbDeviceUpdater, null, null);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                UNSUPPORTED_ON_DEVICE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(UNSUPPORTED_ON_DEVICE);
     }
 
     @Test
@@ -248,11 +253,11 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, false);
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, null, null);
+        mConnectedDeviceGroupController.init(
+                null, mConnectedBluetoothDeviceUpdater, mConnectedUsbDeviceUpdater, null, null);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                AVAILABLE_UNSEARCHABLE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(AVAILABLE_UNSEARCHABLE);
     }
 
     @Test
@@ -260,11 +265,11 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, true);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, false);
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, null, null);
+        mConnectedDeviceGroupController.init(
+                null, mConnectedBluetoothDeviceUpdater, mConnectedUsbDeviceUpdater, null, null);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                AVAILABLE_UNSEARCHABLE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(AVAILABLE_UNSEARCHABLE);
     }
 
     @Test
@@ -272,11 +277,11 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, true);
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, null, null);
+        mConnectedDeviceGroupController.init(
+                null, mConnectedBluetoothDeviceUpdater, mConnectedUsbDeviceUpdater, null, null);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                AVAILABLE_UNSEARCHABLE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(AVAILABLE_UNSEARCHABLE);
     }
 
     @Test
@@ -284,13 +289,16 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, false);
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, mConnectedDockUpdater, null);
+        mConnectedDeviceGroupController.init(
+                null,
+                mConnectedBluetoothDeviceUpdater,
+                mConnectedUsbDeviceUpdater,
+                mConnectedDockUpdater,
+                null);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                AVAILABLE_UNSEARCHABLE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(AVAILABLE_UNSEARCHABLE);
     }
-
 
     @Test
     public void getAvailabilityStatus_noUsiStylusFeature_returnUnSupported() {
@@ -299,15 +307,23 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, false);
-        when(mInputManager.getInputDeviceIds()).thenReturn(new int[]{0});
-        when(mInputManager.getInputDevice(0)).thenReturn(new InputDevice.Builder().setSources(
-                InputDevice.SOURCE_DPAD).setExternal(false).build());
+        when(mInputManager.getInputDeviceIds()).thenReturn(new int[] {0});
+        when(mInputManager.getInputDevice(0))
+                .thenReturn(
+                        new InputDevice.Builder()
+                                .setSources(InputDevice.SOURCE_DPAD)
+                                .setExternal(false)
+                                .build());
 
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, null, mStylusDeviceUpdater);
+        mConnectedDeviceGroupController.init(
+                null,
+                mConnectedBluetoothDeviceUpdater,
+                mConnectedUsbDeviceUpdater,
+                null,
+                mStylusDeviceUpdater);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                UNSUPPORTED_ON_DEVICE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(UNSUPPORTED_ON_DEVICE);
     }
 
     @Test
@@ -315,15 +331,23 @@ public class ConnectedDeviceGroupControllerTest {
         mPackageManager.setSystemFeature(PackageManager.FEATURE_BLUETOOTH, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_ACCESSORY, false);
         mPackageManager.setSystemFeature(PackageManager.FEATURE_USB_HOST, false);
-        when(mInputManager.getInputDeviceIds()).thenReturn(new int[]{0});
-        when(mInputManager.getInputDevice(0)).thenReturn(new InputDevice.Builder().setSources(
-                InputDevice.SOURCE_STYLUS).setExternal(false).build());
+        when(mInputManager.getInputDeviceIds()).thenReturn(new int[] {0});
+        when(mInputManager.getInputDevice(0))
+                .thenReturn(
+                        new InputDevice.Builder()
+                                .setSources(InputDevice.SOURCE_STYLUS)
+                                .setExternal(false)
+                                .build());
 
-        mConnectedDeviceGroupController.init(null, mConnectedBluetoothDeviceUpdater,
-                mConnectedUsbDeviceUpdater, mConnectedDockUpdater, mStylusDeviceUpdater);
+        mConnectedDeviceGroupController.init(
+                null,
+                mConnectedBluetoothDeviceUpdater,
+                mConnectedUsbDeviceUpdater,
+                mConnectedDockUpdater,
+                mStylusDeviceUpdater);
 
-        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus()).isEqualTo(
-                AVAILABLE_UNSEARCHABLE);
+        assertThat(mConnectedDeviceGroupController.getAvailabilityStatus())
+                .isEqualTo(AVAILABLE_UNSEARCHABLE);
     }
 
     @Test
@@ -342,7 +366,6 @@ public class ConnectedDeviceGroupControllerTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_ENABLE_BONDED_BLUETOOTH_DEVICE_SEARCHABLE)
     public void updateDynamicRawDataToIndex_deviceNotBonded_deviceIsNotSearchable() {
         when(mDevice.getBondState()).thenReturn(BluetoothDevice.BOND_NONE);
         List<SearchIndexableRaw> searchData = new ArrayList<>();
@@ -353,7 +376,6 @@ public class ConnectedDeviceGroupControllerTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_ENABLE_BONDED_BLUETOOTH_DEVICE_SEARCHABLE)
     public void updateDynamicRawDataToIndex_deviceBonded_deviceIsSearchable() {
         when(mDevice.getBondState()).thenReturn(BluetoothDevice.BOND_BONDED);
         List<SearchIndexableRaw> searchData = new ArrayList<>();
@@ -362,5 +384,15 @@ public class ConnectedDeviceGroupControllerTest {
 
         assertThat(searchData).isNotEmpty();
         assertThat(searchData.get(0).key).contains(DEVICE_NAME);
+    }
+
+    @Test
+    public void onAudioModeChanged_shouldSetIsOngoingCallAndForceUpdate() {
+        when(mAudioManager.getMode()).thenReturn(AudioManager.MODE_IN_CALL);
+        mConnectedDeviceGroupController.onAudioModeChanged();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        verify(mConnectedBluetoothDeviceUpdater).setIsOngoingCall(true);
+        verify(mConnectedBluetoothDeviceUpdater).forceUpdate();
     }
 }

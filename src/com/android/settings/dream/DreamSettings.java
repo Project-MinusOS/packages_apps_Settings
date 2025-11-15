@@ -16,15 +16,18 @@
 
 package com.android.settings.dream;
 
+import static android.service.dreams.Flags.dreamsV2;
+
 import static com.android.settings.dream.DreamMainSwitchPreferenceController.MAIN_SWITCH_PREF_KEY;
-import static com.android.settingslib.dream.DreamBackend.EITHER;
-import static com.android.settingslib.dream.DreamBackend.NEVER;
-import static com.android.settingslib.dream.DreamBackend.WHILE_CHARGING;
-import static com.android.settingslib.dream.DreamBackend.WHILE_DOCKED;
 
 import android.app.settings.SettingsEnums;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.service.dreams.DreamService;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -33,12 +36,15 @@ import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.CompoundButton.OnCheckedChangeListener;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.preference.Preference;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.settings.R;
 import com.android.settings.Utils;
+import com.android.settings.core.BasePreferenceController;
 import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settingslib.core.AbstractPreferenceController;
@@ -50,6 +56,7 @@ import com.android.settingslib.widget.MainSwitchPreference;
 import java.util.ArrayList;
 import java.util.List;
 
+// LINT.IfChange
 @SearchIndexable
 public class DreamSettings extends DashboardFragment implements OnCheckedChangeListener {
 
@@ -57,44 +64,58 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
     static final String WHILE_CHARGING_ONLY = "while_charging_only";
     static final String WHILE_DOCKED_ONLY = "while_docked_only";
     static final String EITHER_CHARGING_OR_DOCKED = "either_charging_or_docked";
+    static final String WHILE_POSTURED_ONLY = "while_postured_only";
     static final String NEVER_DREAM = "never";
+    private static final String SPACE_PREF_KEY = "dream_space_preference";
+    private static final long DREAMS_LIST_REFRESH_DELAY_MS = 1000;
 
     private MainSwitchPreference mMainSwitchPreference;
     private Button mPreviewButton;
     private Preference mComplicationsTogglePreference;
     private Preference mHomeControllerTogglePreference;
     private RecyclerView mRecyclerView;
+    private final Handler mHandler = new Handler(Looper.getMainLooper());
 
     private DreamPickerController mDreamPickerController;
     private DreamHomeControlsPreferenceController mDreamHomeControlsPreferenceController;
+    private LowLightModePreferenceController mLowLightModePreferenceController;
 
-    private final DreamPickerController.Callback mCallback =
-            this::updateComplicationsToggleVisibility;
+    /** A callback that is invoked whenever the selected dream changes. */
+    private final DreamPickerController.Callback mCallback = () ->
+            updateSelectedDreamSettingsState(
+                    mMainSwitchPreference != null ? mMainSwitchPreference.isChecked() : false);
+
+    private final Runnable mRefreshDreamsListRunnable = this::refreshDreamsList;
+    private BroadcastReceiver mPackageObserver;
 
     @WhenToDream
     static int getSettingFromPrefKey(String key) {
         switch (key) {
             case WHILE_CHARGING_ONLY:
-                return WHILE_CHARGING;
+                return DreamBackend.WHILE_CHARGING;
             case WHILE_DOCKED_ONLY:
-                return WHILE_DOCKED;
+                return DreamBackend.WHILE_DOCKED;
             case EITHER_CHARGING_OR_DOCKED:
-                return EITHER;
+                return DreamBackend.WHILE_CHARGING_OR_DOCKED;
+            case WHILE_POSTURED_ONLY:
+                return DreamBackend.WHILE_POSTURED;
             case NEVER_DREAM:
             default:
-                return NEVER;
+                return DreamBackend.NEVER;
         }
     }
 
     static String getKeyFromSetting(@WhenToDream int dreamSetting) {
         switch (dreamSetting) {
-            case WHILE_CHARGING:
+            case DreamBackend.WHILE_CHARGING:
                 return WHILE_CHARGING_ONLY;
-            case WHILE_DOCKED:
+            case DreamBackend.WHILE_DOCKED:
                 return WHILE_DOCKED_ONLY;
-            case EITHER:
+            case DreamBackend.WHILE_CHARGING_OR_DOCKED:
                 return EITHER_CHARGING_OR_DOCKED;
-            case NEVER:
+            case DreamBackend.WHILE_POSTURED:
+                return WHILE_POSTURED_ONLY;
+            case DreamBackend.NEVER:
             default:
                 return NEVER_DREAM;
         }
@@ -103,14 +124,17 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
     static int getDreamSettingDescriptionResId(@WhenToDream int dreamSetting,
             boolean enabledOnBattery) {
         switch (dreamSetting) {
-            case WHILE_CHARGING:
+            case DreamBackend.WHILE_CHARGING:
                 return R.string.screensaver_settings_summary_sleep;
-            case WHILE_DOCKED:
+            case DreamBackend.WHILE_DOCKED:
                 return enabledOnBattery ? R.string.screensaver_settings_summary_dock
                         : R.string.screensaver_settings_summary_dock_and_charging;
-            case EITHER:
+            case DreamBackend.WHILE_CHARGING_OR_DOCKED:
                 return R.string.screensaver_settings_summary_either_long;
-            case NEVER:
+            case DreamBackend.WHILE_POSTURED:
+                return enabledOnBattery ? R.string.screensaver_settings_summary_postured
+                        : R.string.screensaver_settings_summary_postured_and_charging;
+            case DreamBackend.NEVER:
             default:
                 return R.string.screensaver_settings_summary_never;
         }
@@ -124,6 +148,11 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
     @Override
     protected int getPreferenceScreenResId() {
         return R.xml.dream_fragment_overview;
+    }
+
+    @Override
+    public @Nullable String getPreferenceScreenBindingKey(@NonNull Context context) {
+        return ScreensaverScreen.KEY;
     }
 
     @Override
@@ -142,12 +171,20 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
         if (mDreamPickerController == null) {
             mDreamPickerController = new DreamPickerController(context);
         }
+
+        DreamBackend backend = DreamBackend.getInstance(context);
         if (mDreamHomeControlsPreferenceController == null) {
-            mDreamHomeControlsPreferenceController = new DreamHomeControlsPreferenceController(
-                    context, DreamBackend.getInstance(getContext()));
+            mDreamHomeControlsPreferenceController =
+                    new DreamHomeControlsPreferenceController(context, backend);
         }
+        if (mLowLightModePreferenceController == null) {
+            mLowLightModePreferenceController =
+                    new LowLightModePreferenceController(context, backend);
+        }
+
         controllers.add(mDreamPickerController);
         controllers.add(mDreamHomeControlsPreferenceController);
+        controllers.add(mLowLightModePreferenceController);
         controllers.add(new WhenToDreamPreferenceController(context));
         return controllers;
     }
@@ -178,6 +215,22 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
         mDreamHomeControlsPreferenceController = dreamHomeControlsPreferenceController;
     }
 
+    @VisibleForTesting
+    void setLowLightModePreferenceController(LowLightModePreferenceController controller) {
+        mLowLightModePreferenceController = controller;
+    }
+
+    @VisibleForTesting
+    Handler getHandler() {
+        return mHandler;
+    }
+
+    private void refreshDreamsList() {
+        if (mDreamPickerController != null) {
+            mDreamPickerController.refreshDreamsList();
+        }
+    }
+
     private void setAllPreferencesEnabled(boolean isEnabled) {
         getPreferenceControllers().forEach(controllers -> {
             controllers.forEach(controller -> {
@@ -195,7 +248,8 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
                 }
             });
         });
-        updateComplicationsToggleVisibility();
+
+        updateSelectedDreamSettingsState(isEnabled);
     }
 
     @Override
@@ -221,6 +275,14 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
         if (mDreamPickerController != null) {
             mDreamPickerController.addCallback(mCallback);
         }
+
+        mPackageObserver = new PackageObserver(this::onPackagesChanged);
+
+        // Remove the space preference manually only if the flag is enabled, which removes the
+        // floating preview button, making the extra space unnecessary.
+        if (dreamsV2()) {
+            removePreference(SPACE_PREF_KEY);
+        }
     }
 
     @Override
@@ -233,31 +295,68 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+
+        // Register to receive broadcasts for package changes so that the dreams list can be
+        // refreshed when packages are installed, uninstalled, or updated.
+        final IntentFilter packageFilter = new IntentFilter();
+        packageFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
+        packageFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        packageFilter.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        packageFilter.addDataScheme("package");
+        getActivity().registerReceiver(mPackageObserver, packageFilter);
+
+        refreshDreamsList();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        getHandler().removeCallbacks(mRefreshDreamsListRunnable);
+        getActivity().unregisterReceiver(mPackageObserver);
+    }
+
+    @Override
     public RecyclerView onCreateRecyclerView(LayoutInflater inflater, ViewGroup parent,
             Bundle bundle) {
-        final DreamBackend dreamBackend = DreamBackend.getInstance(getContext());
+        if (!dreamsV2()) {
+            final DreamBackend dreamBackend = DreamBackend.getInstance(getContext());
 
-        final ViewGroup root = getActivity().findViewById(android.R.id.content);
-        mPreviewButton = (Button) getActivity().getLayoutInflater().inflate(
-                R.layout.dream_preview_button, root, false);
-        mPreviewButton.setVisibility(dreamBackend.isEnabled() ? View.VISIBLE : View.GONE);
-        root.addView(mPreviewButton);
-        mPreviewButton.setOnClickListener(v -> dreamBackend.preview(dreamBackend.getActiveDream()));
+            final ViewGroup root = getActivity().findViewById(android.R.id.content);
+            mPreviewButton = (Button) getActivity().getLayoutInflater().inflate(
+                    R.layout.dream_preview_button, root, false);
+            mPreviewButton.setVisibility(dreamBackend.isEnabled() ? View.VISIBLE : View.GONE);
+            root.addView(mPreviewButton);
+            mPreviewButton.setOnClickListener(v -> dreamBackend
+                    .preview(dreamBackend.getActiveDream()));
+            updatePaddingForPreviewButton();
+        }
 
         mRecyclerView = super.onCreateRecyclerView(inflater, parent, bundle);
         mRecyclerView.setFocusable(false);
-        updatePaddingForPreviewButton();
+
         return mRecyclerView;
     }
 
-    private void updateComplicationsToggleVisibility() {
+    /** Refresh the dreams list (in case a dream has just been installed or removed). */
+    private void onPackagesChanged() {
+        // Delay before refreshing the dreams list to account for dreams that are hosted in a
+        // different package than the one that is being changed (for example, the home controls
+        // dream depends on the presence of the Home app, but is actually hosted in sysui).
+        getHandler().postDelayed(mRefreshDreamsListRunnable, DREAMS_LIST_REFRESH_DELAY_MS);
+    }
+
+    /**
+     * Updates the visibility and enabled state of preferences that depend on the currently selected
+     * dream.
+     */
+    private void updateSelectedDreamSettingsState(boolean dreamsEnabled) {
         if (mDreamPickerController == null) {
             return;
         }
+
         final DreamBackend.DreamInfo activeDream = mDreamPickerController.getActiveDreamInfo();
-
-        final DreamBackend dreamBackend = DreamBackend.getInstance(getContext());
-
 
         if (mComplicationsTogglePreference != null) {
             mComplicationsTogglePreference.setVisible(
@@ -265,13 +364,12 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
         }
 
         if (mHomeControllerTogglePreference != null) {
-            boolean isEnabled = dreamBackend.isEnabled()
+            boolean isEnabled = dreamsEnabled
                                 && (activeDream == null
                                 || (activeDream.dreamCategory
                                 & DreamService.DREAM_CATEGORY_HOME_PANEL) == 0)
                                 && mDreamHomeControlsPreferenceController
-                                    .getAvailabilityStatus()
-                                    == mDreamHomeControlsPreferenceController.AVAILABLE;
+                                    .getAvailabilityStatus() == BasePreferenceController.AVAILABLE;
             mHomeControllerTogglePreference.setEnabled(isEnabled);
         }
     }
@@ -285,8 +383,10 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
     @Override
     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
         setAllPreferencesEnabled(isChecked);
-        mPreviewButton.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-        updatePaddingForPreviewButton();
+        if (!dreamsV2()) {
+            mPreviewButton.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            updatePaddingForPreviewButton();
+        }
     }
 
     public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
@@ -302,5 +402,18 @@ public class DreamSettings extends DashboardFragment implements OnCheckedChangeL
             return Utils.areDreamsAvailableToCurrentUser(context);
         }
     }
-}
 
+    private static class PackageObserver extends BroadcastReceiver {
+        private final Runnable mCallback;
+
+        PackageObserver(Runnable callback) {
+            mCallback = callback;
+        }
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mCallback.run();
+        }
+    }
+}
+// LINT.ThenChange(ScreensaverScreen.kt)

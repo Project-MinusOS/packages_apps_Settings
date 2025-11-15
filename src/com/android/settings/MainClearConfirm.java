@@ -17,6 +17,8 @@
 package com.android.settings;
 
 
+import static android.content.Context.MODE_PRIVATE;
+
 import static com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 import android.app.ProgressDialog;
@@ -25,6 +27,7 @@ import android.app.admin.FactoryResetProtectionPolicy;
 import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -33,6 +36,7 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.service.oemlock.OemLockManager;
 import android.service.persistentdata.PersistentDataBlockManager;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -42,6 +46,7 @@ import androidx.annotation.VisibleForTesting;
 
 import com.android.settings.core.InstrumentedFragment;
 import com.android.settings.enterprise.ActionDisabledByAdminDialogHelper;
+import com.android.settings.network.telephony.SubscriptionActionDialogActivity;
 import com.android.settingslib.RestrictedLockUtilsInternal;
 
 import com.google.android.setupcompat.template.FooterBarMixin;
@@ -49,6 +54,7 @@ import com.google.android.setupcompat.template.FooterButton;
 import com.google.android.setupcompat.template.FooterButton.ButtonType;
 import com.google.android.setupcompat.util.WizardManagerHelper;
 import com.google.android.setupdesign.GlifLayout;
+import com.google.android.setupdesign.util.ThemeHelper;
 
 /**
  * Confirm and execute a reset of the device to a clean "just out of the box"
@@ -90,7 +96,7 @@ public class MainClearConfirm extends InstrumentedFragment {
             } else {
                 pdbManager = null;
             }
-
+            setSimDialogProgressState();
             if (shouldWipePersistentDataBlock(pdbManager)) {
 
                 new AsyncTask<Void, Void, Void>() {
@@ -127,6 +133,17 @@ public class MainClearConfirm extends InstrumentedFragment {
                 }.execute();
             } else {
                 doMainClear();
+            }
+
+        }
+
+        private void setSimDialogProgressState() {
+            if (getActivity() != null) {
+                final SharedPreferences prefs = getActivity().getSharedPreferences(
+                        SubscriptionActionDialogActivity.SIM_ACTION_DIALOG_PREFS, MODE_PRIVATE);
+                prefs.edit().putInt(SubscriptionActionDialogActivity.KEY_PROGRESS_STATE,
+                        SubscriptionActionDialogActivity.PROGRESS_IS_SHOWING).apply();
+                Log.d(TAG, "SIM dialog setProgressState: 1");
             }
         }
 
@@ -218,7 +235,6 @@ public class MainClearConfirm extends InstrumentedFragment {
                         .setText(R.string.main_clear_button_text)
                         .setListener(mFinalClickListener)
                         .setButtonType(ButtonType.OTHER)
-                        .setTheme(com.google.android.setupdesign.R.style.SudGlifButton_Primary)
                         .build()
         );
     }
@@ -226,6 +242,7 @@ public class MainClearConfirm extends InstrumentedFragment {
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
+        ThemeHelper.trySetSuwTheme(getContext());
         final EnforcedAdmin admin = RestrictedLockUtilsInternal.checkIfRestrictionEnforced(
                 getActivity(), UserManager.DISALLOW_FACTORY_RESET, UserHandle.myUserId());
         if (RestrictedLockUtilsInternal.hasBaseUserRestriction(getActivity(),

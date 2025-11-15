@@ -37,6 +37,7 @@ import androidx.preference.PreferenceViewHolder;
 import com.android.settingslib.R;
 import com.android.settingslib.RestrictedPreference;
 import com.android.settingslib.Utils;
+import com.android.settingslib.widget.SettingsThemeHelper;
 import com.android.settingslib.wifi.WifiUtils;
 import com.android.wifitrackerlib.HotspotNetworkEntry;
 import com.android.wifitrackerlib.WifiEntry;
@@ -82,8 +83,9 @@ public class WifiEntryPreference extends RestrictedPreference implements
     WifiEntryPreference(@NonNull Context context, @NonNull WifiEntry wifiEntry,
             @NonNull WifiUtils.InternetIconInjector iconInjector) {
         super(context);
-
-        setLayoutResource(R.layout.preference_access_point);
+        int layoutResId = SettingsThemeHelper.isExpressiveTheme(getContext())
+                ? R.layout.preference_access_point_expressive : R.layout.preference_access_point;
+        setLayoutResource(layoutResId);
         mFrictionSld = getFrictionStateListDrawable();
         mIconInjector = iconInjector;
         setWifiEntry(wifiEntry);

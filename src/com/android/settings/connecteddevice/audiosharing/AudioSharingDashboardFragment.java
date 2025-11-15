@@ -25,6 +25,7 @@ import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -32,7 +33,6 @@ import androidx.annotation.VisibleForTesting;
 
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
-import com.android.settings.connecteddevice.audiosharing.audiostreams.AudioStreamsCategoryController;
 import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.widget.SettingsMainSwitchBar;
 import com.android.settingslib.bluetooth.BluetoothUtils;
@@ -44,11 +44,16 @@ public class AudioSharingDashboardFragment extends DashboardFragment
 
     public static final int SHARE_THEN_PAIR_REQUEST_CODE = 1002;
 
+    public static final String IS_SHOWING_AUDIO_SHARING_DASHBOARD_KEY =
+            "is_showing_audio_sharing_dashboard";
+    public static final int SHOWING_AUDIO_SHARING_DASHBOARD = 1;
+    public static final int NOT_SHOWING_AUDIO_SHARING_DASHBOARD = 0;
+
     SettingsMainSwitchBar mMainSwitchBar;
+    private Context mContext;
     private AudioSharingDeviceVolumeGroupController mAudioSharingDeviceVolumeGroupController;
     private AudioSharingCallAudioPreferenceController mAudioSharingCallAudioPreferenceController;
     private AudioSharingPlaySoundPreferenceController mAudioSharingPlaySoundPreferenceController;
-    private AudioStreamsCategoryController mAudioStreamsCategoryController;
     private AudioSharingSwitchBarController mAudioSharingSwitchBarController;
 
     public AudioSharingDashboardFragment() {
@@ -78,6 +83,7 @@ public class AudioSharingDashboardFragment extends DashboardFragment
     @Override
     public void onAttach(Context context) {
         super.onAttach(context);
+        mContext = context;
         mAudioSharingDeviceVolumeGroupController =
                 use(AudioSharingDeviceVolumeGroupController.class);
         mAudioSharingDeviceVolumeGroupController.init(this);
@@ -86,7 +92,6 @@ public class AudioSharingDashboardFragment extends DashboardFragment
         mAudioSharingCallAudioPreferenceController.init(this);
         mAudioSharingPlaySoundPreferenceController =
                 use(AudioSharingPlaySoundPreferenceController.class);
-        mAudioStreamsCategoryController = use(AudioStreamsCategoryController.class);
     }
 
     @Override
@@ -105,25 +110,56 @@ public class AudioSharingDashboardFragment extends DashboardFragment
     }
 
     @Override
+    public void onResume() {
+        super.onResume();
+        // TODO(b/395058868): Remove this if it's decided this is not needed.
+        setAudioSharingDashboardSettingsGlobal(true);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        // TODO(b/395058868): Remove this if it's decided this is not needed.
+        setAudioSharingDashboardSettingsGlobal(false);
+    }
+
+    private void setAudioSharingDashboardSettingsGlobal(Boolean isShowingAudioSharingDashboard) {
+        var unused =
+                ThreadUtils.postOnBackgroundThread(
+                        () -> {
+                            int value =
+                                    isShowingAudioSharingDashboard
+                                            ? SHOWING_AUDIO_SHARING_DASHBOARD
+                                            : NOT_SHOWING_AUDIO_SHARING_DASHBOARD;
+                            Settings.Global.putInt(
+                                    mContext.getContentResolver(),
+                                    IS_SHOWING_AUDIO_SHARING_DASHBOARD_KEY,
+                                    value);
+                        });
+    }
+
+    @Override
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (!BluetoothUtils.isAudioSharingEnabled()) return;
-        // In share then pair flow, after users be routed to pair new device page and successfully
-        // pair and connect an LEA headset, the pair fragment will be finished with RESULT_OK
-        // and EXTRA_BT_DEVICE_TO_AUTO_ADD_SOURCE, pass the BT device to switch bar controller,
-        // which is responsible for adding source to the device with loading indicator.
-        if (requestCode == SHARE_THEN_PAIR_REQUEST_CODE) {
-            if (resultCode == Activity.RESULT_OK) {
-                BluetoothDevice btDevice =
-                        data != null
-                                ? data.getParcelableExtra(EXTRA_BT_DEVICE_TO_AUTO_ADD_SOURCE,
-                                BluetoothDevice.class)
-                                : null;
-                Log.d(TAG, "onActivityResult: RESULT_OK with device = " + btDevice);
-                if (btDevice != null) {
-                    var unused = ThreadUtils.postOnBackgroundThread(
-                            () -> mAudioSharingSwitchBarController.handleAutoAddSourceAfterPair(
-                                    btDevice));
+        if (BluetoothUtils.isAudioSharingUIAvailable(mContext)) {
+            // In share then pair flow, after users be routed to pair new device page and
+            // successfully pair and connect an LEA headset, the pair fragment will be finished with
+            // RESULT_OK and EXTRA_BT_DEVICE_TO_AUTO_ADD_SOURCE, pass the BT device to switch bar
+            // controller, which is responsible for adding source to the device with loading
+            // indicator.
+            if (requestCode == SHARE_THEN_PAIR_REQUEST_CODE) {
+                if (resultCode == Activity.RESULT_OK) {
+                    BluetoothDevice btDevice =
+                            data != null
+                                    ? data.getParcelableExtra(EXTRA_BT_DEVICE_TO_AUTO_ADD_SOURCE,
+                                    BluetoothDevice.class)
+                                    : null;
+                    Log.d(TAG, "onActivityResult: RESULT_OK with device = " + btDevice);
+                    if (btDevice != null) {
+                        var unused = ThreadUtils.postOnBackgroundThread(
+                                () -> mAudioSharingSwitchBarController.handleAutoAddSourceAfterPair(
+                                        btDevice));
+                    }
                 }
             }
         }
@@ -145,12 +181,10 @@ public class AudioSharingDashboardFragment extends DashboardFragment
             AudioSharingDeviceVolumeGroupController volumeGroupController,
             AudioSharingCallAudioPreferenceController callAudioController,
             AudioSharingPlaySoundPreferenceController playSoundController,
-            AudioStreamsCategoryController streamsCategoryController,
             AudioSharingSwitchBarController switchBarController) {
         mAudioSharingDeviceVolumeGroupController = volumeGroupController;
         mAudioSharingCallAudioPreferenceController = callAudioController;
         mAudioSharingPlaySoundPreferenceController = playSoundController;
-        mAudioStreamsCategoryController = streamsCategoryController;
         mAudioSharingSwitchBarController = switchBarController;
     }
 
@@ -158,7 +192,6 @@ public class AudioSharingDashboardFragment extends DashboardFragment
         mAudioSharingDeviceVolumeGroupController.updateVisibility();
         mAudioSharingCallAudioPreferenceController.updateVisibility();
         mAudioSharingPlaySoundPreferenceController.updateVisibility();
-        mAudioStreamsCategoryController.updateVisibility();
     }
 
     private void onProfilesConnectedForAttachedPreferences() {

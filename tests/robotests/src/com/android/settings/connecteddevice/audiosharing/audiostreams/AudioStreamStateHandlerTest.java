@@ -17,6 +17,7 @@
 package com.android.settings.connecteddevice.audiosharing.audiostreams;
 
 import static com.android.settingslib.flags.Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX;
+import static com.android.settingslib.flags.Flags.FLAG_ENABLE_LE_AUDIO_SHARING;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -31,12 +32,16 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothStatusCodes;
 import android.content.Context;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.text.SpannableString;
 
 import androidx.preference.Preference;
 import androidx.test.core.app.ApplicationProvider;
+
+import com.android.settings.testutils.shadow.ShadowBluetoothAdapter;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -47,8 +52,14 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
+import org.robolectric.shadow.api.Shadow;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(
+        shadows = {
+                ShadowBluetoothAdapter.class,
+        })
 public class AudioStreamStateHandlerTest {
     @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
@@ -58,12 +69,21 @@ public class AudioStreamStateHandlerTest {
     private final Context mContext = spy(ApplicationProvider.getApplicationContext());
     @Mock private AudioStreamsProgressCategoryController mController;
     @Mock private AudioStreamsHelper mHelper;
+    @Mock
+    private AudioStreamScanHelper mScanHelper;
     @Mock private AudioStreamPreference mPreference;
     private AudioStreamStateHandler mHandler;
 
     @Before
     public void setUp() {
         mSetFlagsRule.disableFlags(FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
+        ShadowBluetoothAdapter shadowBluetoothAdapter = Shadow.extract(
+                BluetoothAdapter.getDefaultAdapter());
+        shadowBluetoothAdapter.setEnabled(true);
+        shadowBluetoothAdapter.setIsLeAudioBroadcastSourceSupported(
+                BluetoothStatusCodes.FEATURE_SUPPORTED);
+        shadowBluetoothAdapter.setIsLeAudioBroadcastAssistantSupported(
+                BluetoothStatusCodes.FEATURE_SUPPORTED);
         mHandler = spy(new AudioStreamStateHandler());
     }
 
@@ -78,10 +98,11 @@ public class AudioStreamStateHandlerTest {
                         AudioStreamsProgressCategoryController.AudioStreamState
                                 .ADD_SOURCE_BAD_CODE);
 
-        mHandler.handleStateChange(mPreference, mController, mHelper);
+        mHandler.handleStateChange(mHandler, mPreference, mController, mHelper, mScanHelper);
 
         verify(mPreference, never()).setAudioStreamState(any());
-        verify(mHandler, never()).performAction(any(), any(), any());
+        verify(mHandler, never()).onEnter(any(), any(), any(), any());
+        verify(mHandler, never()).onExit(any(), any());
         verify(mPreference, never()).setIsConnected(anyBoolean());
         verify(mPreference, never()).setSummary(any());
         verify(mPreference, never()).setOnPreferenceClickListener(any());
@@ -96,12 +117,13 @@ public class AudioStreamStateHandlerTest {
                         AudioStreamsProgressCategoryController.AudioStreamState
                                 .ADD_SOURCE_BAD_CODE);
 
-        mHandler.handleStateChange(mPreference, mController, mHelper);
+        mHandler.handleStateChange(mHandler, mPreference, mController, mHelper, mScanHelper);
 
         verify(mPreference)
                 .setAudioStreamState(
                         AudioStreamsProgressCategoryController.AudioStreamState.SOURCE_ADDED);
-        verify(mHandler).performAction(any(), any(), any());
+        verify(mHandler).onEnter(any(), any(), any(), any());
+        verify(mHandler).onExit(any(), any());
         verify(mPreference).setIsConnected(eq(true));
         verify(mPreference).setSummary(eq(""));
         verify(mPreference).setOnPreferenceClickListener(eq(null));
@@ -109,6 +131,7 @@ public class AudioStreamStateHandlerTest {
 
     @Test
     public void testHandleStateChange_setNewState_sourcePresent() {
+        mSetFlagsRule.enableFlags(FLAG_ENABLE_LE_AUDIO_SHARING);
         mSetFlagsRule.enableFlags(FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
 
         when(mHandler.getStateEnum())
@@ -118,12 +141,13 @@ public class AudioStreamStateHandlerTest {
                         AudioStreamsProgressCategoryController.AudioStreamState
                                 .ADD_SOURCE_BAD_CODE);
 
-        mHandler.handleStateChange(mPreference, mController, mHelper);
+        mHandler.handleStateChange(mHandler, mPreference, mController, mHelper, mScanHelper);
 
         verify(mPreference)
                 .setAudioStreamState(
                         AudioStreamsProgressCategoryController.AudioStreamState.SOURCE_PRESENT);
-        verify(mHandler).performAction(any(), any(), any());
+        verify(mHandler).onEnter(any(), any(), any(), any());
+        verify(mHandler).onExit(any(), any());
         verify(mPreference).setIsConnected(eq(true));
         verify(mPreference).setSummary(eq(""));
         verify(mPreference).setOnPreferenceClickListener(eq(null));
@@ -145,13 +169,14 @@ public class AudioStreamStateHandlerTest {
         when(mPreference.getContext()).thenReturn(mContext);
         doReturn(SUMMARY).when(mContext).getString(anyInt());
 
-        mHandler.handleStateChange(mPreference, mController, mHelper);
+        mHandler.handleStateChange(mHandler, mPreference, mController, mHelper, mScanHelper);
 
         verify(mPreference)
                 .setAudioStreamState(
                         AudioStreamsProgressCategoryController.AudioStreamState
                                 .ADD_SOURCE_BAD_CODE);
-        verify(mHandler).performAction(any(), any(), any());
+        verify(mHandler).onEnter(any(), any(), any(), any());
+        verify(mHandler).onExit(any(), any());
         verify(mPreference).setIsConnected(eq(false));
         ArgumentCaptor<SpannableString> argumentCaptor =
                 ArgumentCaptor.forClass(SpannableString.class);
@@ -159,6 +184,23 @@ public class AudioStreamStateHandlerTest {
         assertThat(argumentCaptor.getValue()).isNotNull();
         assertThat(argumentCaptor.getValue().toString()).isEqualTo(SUMMARY);
         verify(mPreference).setOnPreferenceClickListener(eq(listener));
+    }
+
+    @Test
+    public void testHandleStateChange_shouldRemovePreference() {
+        when(mHandler.getStateEnum())
+                .thenReturn(
+                        AudioStreamsProgressCategoryController.AudioStreamState
+                                .SOURCE_LOST);
+        when(mHandler.shouldRemovePreference()).thenReturn(true);
+        when(mPreference.getAudioStreamState())
+                .thenReturn(
+                        AudioStreamsProgressCategoryController.AudioStreamState
+                                .SYNCED);
+
+        mHandler.handleStateChange(mHandler, mPreference, mController, mHelper, mScanHelper);
+
+        verify(mController).removePreference(mPreference);
     }
 
     @Test

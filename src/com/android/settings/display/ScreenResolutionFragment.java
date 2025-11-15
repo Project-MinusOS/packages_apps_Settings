@@ -23,17 +23,17 @@ import android.graphics.Point;
 import android.graphics.drawable.Drawable;
 import android.hardware.display.DisplayManager;
 import android.provider.Settings;
+import android.text.SpannableString;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.Display;
-import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityManager;
 
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
+import com.android.settings.Utils;
 import com.android.settings.core.instrumentation.SettingsStatsLog;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.widget.RadioButtonPickerFragment;
@@ -60,11 +60,10 @@ public class ScreenResolutionFragment extends RadioButtonPickerFragment {
     private Display mDefaultDisplay;
     private String[] mScreenResolutionOptions;
     private Set<Point> mResolutions;
-    private String[] mScreenResolutionSummaries;
+    private SpannableString[] mScreenResolutionSummaries;
 
     private IllustrationPreference mImagePreference;
     private DisplayObserver mDisplayObserver;
-    private AccessibilityManager mAccessibilityManager;
 
     private int mHighWidth;
     private int mFullWidth;
@@ -75,7 +74,6 @@ public class ScreenResolutionFragment extends RadioButtonPickerFragment {
 
         mDefaultDisplay =
                 context.getSystemService(DisplayManager.class).getDisplay(Display.DEFAULT_DISPLAY);
-        mAccessibilityManager = context.getSystemService(AccessibilityManager.class);
         mResources = context.getResources();
         mScreenResolutionOptions =
                 mResources.getStringArray(R.array.config_screen_resolution_options_strings);
@@ -88,10 +86,18 @@ public class ScreenResolutionFragment extends RadioButtonPickerFragment {
         mFullWidth = controller.getFullWidth();
         Log.i(TAG, "mHighWidth:" + mHighWidth + "mFullWidth:" + mFullWidth);
         mScreenResolutionSummaries =
-                new String[] {
-                    mHighWidth + " x " + controller.getHighHeight(),
-                    mFullWidth + " x " + controller.getFullHeight()
+                new SpannableString[] {
+                    getResolutionSpannable(mHighWidth, controller.getHighHeight()),
+                    getResolutionSpannable(mFullWidth, controller.getFullHeight())
                 };
+    }
+
+
+    private SpannableString getResolutionSpannable(int width, int height) {
+        String resolutionString = width + " x " + height;
+        String accessibleText = mResources.getString(
+                R.string.screen_resolution_delimiter_a11y, width, height);
+        return Utils.createAccessibleSequence(resolutionString, accessibleText);
     }
 
     @Override
@@ -236,13 +242,6 @@ public class ScreenResolutionFragment extends RadioButtonPickerFragment {
             return;
         }
 
-        if (mAccessibilityManager.isEnabled()) {
-            AccessibilityEvent event = AccessibilityEvent.obtain();
-            event.setEventType(AccessibilityEvent.TYPE_ANNOUNCEMENT);
-            event.getText().add(mResources.getString(R.string.screen_resolution_selected_a11y));
-            mAccessibilityManager.sendAccessibilityEvent(event);
-        }
-
         super.onRadioButtonClicked(selected);
     }
 
@@ -325,11 +324,10 @@ public class ScreenResolutionFragment extends RadioButtonPickerFragment {
             }
 
             final DisplayDensityUtils density = new DisplayDensityUtils(mContext);
-            final int currentIndex = density.getCurrentIndexForDefaultDisplay();
-            final int defaultDensity = density.getDefaultDensityForDefaultDisplay();
+            final int currentIndex = density.getCurrentIndex();
+            final int defaultDensity = density.getDefaultDensity();
 
-            if (density.getDefaultDisplayDensityValues()[mCurrentIndex]
-                    == density.getDefaultDensityForDefaultDisplay()) {
+            if (density.getValues()[mCurrentIndex] == density.getDefaultDensity()) {
                 return;
             }
 
@@ -373,20 +371,19 @@ public class ScreenResolutionFragment extends RadioButtonPickerFragment {
             /* If current density is the same as a default density of other resolutions,
              * then mCurrentIndex may be out of boundary.
              */
-            if (density.getDefaultDisplayDensityValues().length <= mCurrentIndex) {
-                mCurrentIndex = density.getCurrentIndexForDefaultDisplay();
+            if (density.getValues().length <= mCurrentIndex) {
+                mCurrentIndex = density.getCurrentIndex();
             }
-            if (density.getDefaultDisplayDensityValues()[mCurrentIndex]
-                    != density.getDefaultDensityForDefaultDisplay()) {
+            if (density.getValues()[mCurrentIndex] != density.getDefaultDensity()) {
                 density.setForcedDisplayDensity(mCurrentIndex);
             }
 
-            mDefaultDensity = density.getDefaultDensityForDefaultDisplay();
+            mDefaultDensity = density.getDefaultDensity();
         }
 
         private boolean isDensityChanged() {
             final DisplayDensityUtils density = new DisplayDensityUtils(mContext);
-            if (density.getDefaultDensityForDefaultDisplay() == mDefaultDensity) {
+            if (density.getDefaultDensity() == mDefaultDensity) {
                 return false;
             }
 

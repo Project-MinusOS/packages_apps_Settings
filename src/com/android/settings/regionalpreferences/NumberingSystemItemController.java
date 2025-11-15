@@ -34,9 +34,10 @@ import com.android.internal.app.LocaleStore;
 import com.android.settings.core.BasePreferenceController;
 import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.dashboard.DashboardFragment;
+import com.android.settings.flags.Flags;
 import com.android.settings.overlay.FeatureFactory;
-import com.android.settings.widget.TickButtonPreference;
 import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.widget.SelectorWithWidgetPreference;
 
 import java.util.Locale;
 
@@ -138,13 +139,13 @@ public class NumberingSystemItemController extends BasePreferenceController {
         for (String localeTag : locales) {
             Locale supportedLocale = Locale.forLanguageTag(localeTag);
             if (isSameBaseLocale(targetLocale, supportedLocale)) {
-                TickButtonPreference pref = new TickButtonPreference(mContext);
+                SelectorWithWidgetPreference pref = new SelectorWithWidgetPreference(mContext);
                 String numberingName = getNumberingSystem(supportedLocale);
                 pref.setTitle(numberingName);
                 String key = supportedLocale.getUnicodeLocaleType(
                         ExtensionTypes.NUMBERING_SYSTEM);
                 pref.setKey(key == null ? RegionalPreferencesDataUtils.DEFAULT_VALUE : key);
-                pref.setSelected(isSameNumberingSystem(targetLocale, supportedLocale));
+                pref.setChecked(isSameNumberingSystem(targetLocale, supportedLocale));
                 screen.addPreference(pref);
             }
         }
@@ -158,21 +159,27 @@ public class NumberingSystemItemController extends BasePreferenceController {
         extra.putString(RegionalPreferencesEntriesFragment.ARG_KEY_REGIONAL_PREFERENCE,
                 ARG_VALUE_NUMBERING_SYSTEM_SELECT);
         extra.putString(KEY_SELECTED_LANGUAGE, selectedLanguage);
+
+        String destinationFragment = NumberingPreferencesFragment.class.getName();
+        if (Flags.regionalPreferencesApiEnabled()) {
+            destinationFragment = NumberingSystemFormatSelectionFragment.class.getName();
+        }
         new SubSettingLauncher(preference.getContext())
-                .setDestination(NumberingPreferencesFragment.class.getName())
+                .setDestination(destinationFragment)
                 .setSourceMetricsCategory(
-                        SettingsEnums.NUMBERING_SYSTEM_LANGUAGE_SELECTION_PREFERENCE)
+                    SettingsEnums.NUMBERING_SYSTEM_LANGUAGE_SELECTION_PREFERENCE)
                 .setArguments(extra)
                 .launch();
     }
 
     private void handleNumberSystemSelect(Preference preference) {
         for (int i = 0; i < mPreferenceScreen.getPreferenceCount(); i++) {
-            TickButtonPreference pref = (TickButtonPreference) mPreferenceScreen.getPreference(i);
+            SelectorWithWidgetPreference pref =
+                    (SelectorWithWidgetPreference) mPreferenceScreen.getPreference(i);
             Log.i(TAG, "[onPreferenceClick] key is " + pref.getKey());
             if (pref.getKey().equals(preference.getKey())) {
                 String numberingSystem = pref.getKey();
-                pref.setSelected(true);
+                pref.setChecked(true);
                 Locale updatedLocale =
                         saveNumberingSystemToLocale(Locale.forLanguageTag(mSelectedLanguage),
                                 numberingSystem);
@@ -188,7 +195,7 @@ public class NumberingSystemItemController extends BasePreferenceController {
                 mParentFragment.setArguments(bundle);
                 continue;
             }
-            pref.setSelected(false);
+            pref.setChecked(false);
         }
     }
 

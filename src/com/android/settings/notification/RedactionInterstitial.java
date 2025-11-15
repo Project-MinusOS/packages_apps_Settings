@@ -54,6 +54,7 @@ import com.google.android.setupcompat.util.WizardManagerHelper;
 import com.google.android.setupdesign.GlifLayout;
 import com.google.android.setupdesign.util.ThemeHelper;
 
+// TODO: b/417603276 - Decouple this class from SettingsActivity.
 public class RedactionInterstitial extends SettingsActivity {
 
     @Override
@@ -70,8 +71,7 @@ public class RedactionInterstitial extends SettingsActivity {
 
     @Override
     protected void onCreate(Bundle savedInstance) {
-        setTheme(SetupWizardUtils.getTheme(this, getIntent()));
-        ThemeHelper.trySetDynamicColor(this);
+        ThemeHelper.trySetSuwTheme(this);
         super.onCreate(savedInstance);
         findViewById(R.id.content_parent).setFitsSystemWindows(false);
     }
@@ -112,6 +112,7 @@ public class RedactionInterstitial extends SettingsActivity {
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container,
                 Bundle savedInstanceState) {
+            super.onCreateView(inflater, container, savedInstanceState);
             return inflater.inflate(R.layout.redaction_interstitial, container, false);
         }
 

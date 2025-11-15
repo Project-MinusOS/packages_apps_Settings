@@ -19,6 +19,11 @@ package com.android.settings.connecteddevice.audiosharing.audiostreams;
 import static com.android.settings.connecteddevice.audiosharing.audiostreams.AudioStreamMediaService.BROADCAST_ID;
 import static com.android.settings.connecteddevice.audiosharing.audiostreams.AudioStreamMediaService.DEVICES;
 import static com.android.settings.connecteddevice.audiosharing.audiostreams.AudioStreamMediaService.LEAVE_BROADCAST_ACTION;
+import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcast.EXTRA_PRIVATE_BROADCAST_RECEIVE_DATA;
+import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcastAssistant.LocalBluetoothLeBroadcastSourceState.DECRYPTION_FAILED;
+import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcastAssistant.LocalBluetoothLeBroadcastSourceState.PAUSED;
+import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcastAssistant.LocalBluetoothLeBroadcastSourceState.PAUSED_BY_RECEIVER;
+import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcastAssistant.LocalBluetoothLeBroadcastSourceState.STREAMING;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -28,11 +33,13 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.kotlin.VerificationKt.times;
+
+import static java.util.Collections.emptyList;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -40,6 +47,7 @@ import android.app.NotificationManager;
 import android.app.settings.SettingsEnums;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothLeBroadcastReceiveState;
 import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothStatusCodes;
 import android.content.Context;
@@ -51,10 +59,13 @@ import android.media.session.ISession;
 import android.media.session.ISessionController;
 import android.media.session.MediaSessionManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.util.DisplayMetrics;
+import android.view.KeyEvent;
 
 import com.android.settings.connecteddevice.audiosharing.audiostreams.testshadows.ShadowAudioStreamsHelper;
 import com.android.settings.testutils.FakeFeatureFactory;
@@ -67,6 +78,7 @@ import com.android.settingslib.bluetooth.CachedBluetoothDeviceManager;
 import com.android.settingslib.bluetooth.LocalBluetoothLeBroadcastAssistant;
 import com.android.settingslib.bluetooth.LocalBluetoothManager;
 import com.android.settingslib.bluetooth.LocalBluetoothProfileManager;
+import com.android.settingslib.bluetooth.PrivateBroadcastReceiveData;
 import com.android.settingslib.bluetooth.VolumeControlProfile;
 import com.android.settingslib.flags.Flags;
 
@@ -85,7 +97,8 @@ import org.robolectric.shadow.api.Shadow;
 import org.robolectric.util.ReflectionHelpers;
 
 import java.util.ArrayList;
-import java.util.Set;
+import java.util.HashSet;
+import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(
@@ -98,11 +111,13 @@ import java.util.Set;
 public class AudioStreamMediaServiceTest {
     @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
+    private static final String DEVICE_ADDRESS = "00:A1:A1:A1:A1:A1";
     private static final String CHANNEL_ID = "bluetooth_notification_channel";
     private static final String DEVICE_NAME = "name";
     @Mock private Resources mResources;
     @Mock private LocalBluetoothManager mLocalBtManager;
     @Mock private LocalBluetoothLeBroadcastAssistant mLeBroadcastAssistant;
+    @Mock private BluetoothLeBroadcastReceiveState mBroadcastReceiveState;
     @Mock private AudioStreamsHelper mAudioStreamsHelper;
     @Mock private NotificationManager mNotificationManager;
     @Mock private MediaSessionManager mMediaSessionManager;
@@ -112,11 +127,14 @@ public class AudioStreamMediaServiceTest {
     @Mock private VolumeControlProfile mVolumeControlProfile;
     @Mock private CachedBluetoothDevice mCachedBluetoothDevice;
     @Mock private BluetoothDevice mDevice;
+    @Mock
+    private BluetoothDevice mDevice2;
     @Mock private ISession mISession;
     @Mock private ISessionController mISessionController;
     @Mock private PackageManager mPackageManager;
     @Mock private DisplayMetrics mDisplayMetrics;
     @Mock private Context mContext;
+    @Mock private Handler mHandler;
     private FakeFeatureFactory mFeatureFactory;
     private AudioStreamMediaService mAudioStreamMediaService;
 
@@ -140,8 +158,19 @@ public class AudioStreamMediaServiceTest {
         when(mCachedBluetoothDevice.getName()).thenReturn(DEVICE_NAME);
         when(mLocalBluetoothProfileManager.getVolumeControlProfile())
                 .thenReturn(mVolumeControlProfile);
-
-        mAudioStreamMediaService = spy(new AudioStreamMediaService());
+        when(mLocalBluetoothProfileManager.getLeAudioBroadcastAssistantProfile())
+                .thenReturn(mLeBroadcastAssistant);
+        when(mHandler.post(any(Runnable.class))).thenAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        });
+        when(mHandler.getLooper()).thenReturn(Looper.getMainLooper());
+        mAudioStreamMediaService = spy(new AudioStreamMediaService() {
+            @Override
+            Handler getHandler() {
+                return mHandler;
+            }
+        });
         ReflectionHelpers.setField(mAudioStreamMediaService, "mBase", mContext);
         when(mAudioStreamMediaService.getSystemService(anyString()))
                 .thenReturn(mMediaSessionManager);
@@ -226,6 +255,7 @@ public class AudioStreamMediaServiceTest {
     @Test
     public void onDestroy_flagOn_cleanup() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
         var devices = new ArrayList<BluetoothDevice>();
         devices.add(mDevice);
 
@@ -243,7 +273,32 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
+    public void byReceiveStateFlagOn_onDestroy_flagOn_cleanup() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onCreate();
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        mAudioStreamMediaService.onDestroy();
+
+        verify(mBluetoothEventManager).unregisterCallback(any());
+        verify(mLeBroadcastAssistant).unregisterServiceCallBack(any());
+        verify(mVolumeControlProfile).unregisterCallback(any());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_onStartCommand_invalidData_stopSelf() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        Intent intent = setupReceiveDataIntent(-1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+
+        verify(mAudioStreamMediaService).stopSelf();
+    }
+
+    @Test
     public void onStartCommand_noBroadcastId_stopSelf() {
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
         mAudioStreamMediaService.onStartCommand(new Intent(), /* flags= */ 0, /* startId= */ 0);
 
         verify(mAudioStreamMediaService).stopSelf();
@@ -251,6 +306,7 @@ public class AudioStreamMediaServiceTest {
 
     @Test
     public void onStartCommand_noDevice_stopSelf() {
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
         Intent intent = new Intent();
         intent.putExtra(BROADCAST_ID, 1);
 
@@ -260,7 +316,188 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
+    public void byReceiveStateFlagOn_onStartCommand_createSessionAndStartForeground() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+
+        ArgumentCaptor<Notification> notificationCapture = ArgumentCaptor.forClass(
+                Notification.class);
+        verify(mAudioStreamMediaService).startForeground(anyInt(), notificationCapture.capture());
+        var notification = notificationCapture.getValue();
+        assertThat(notification.getSmallIcon()).isNotNull();
+        assertThat(notification.isStyle(Notification.MediaStyle.class)).isTrue();
+
+        verify(mAudioStreamMediaService, never()).stopSelf();
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_onStartCommand_decryptionFailed_stopSelf() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        Intent intent = setupReceiveDataIntent(1, mDevice, DECRYPTION_FAILED,
+                new HashSet<>(List.of(-1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+
+        verify(mAudioStreamMediaService).stopSelf();
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_onStartCommand_addDevice() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+        Intent intent2 = setupReceiveDataIntent(1, mDevice2, PAUSED, new HashSet<>(List.of(2)));
+        mAudioStreamMediaService.onStartCommand(intent2, /* flags= */ 0, /* startId= */ 0);
+
+        ArgumentCaptor<Notification> notificationCapture = ArgumentCaptor.forClass(
+                Notification.class);
+        verify(mAudioStreamMediaService).startForeground(anyInt(), notificationCapture.capture());
+        var notification = notificationCapture.getValue();
+        assertThat(notification.getSmallIcon()).isNotNull();
+        assertThat(notification.isStyle(Notification.MediaStyle.class)).isTrue();
+
+        assertThat(mAudioStreamMediaService.mStateByDevice).isNotNull();
+        var deviceState = mAudioStreamMediaService.mStateByDevice.get(mDevice);
+        assertThat(deviceState).isNotNull();
+        assertThat(deviceState).isEqualTo(STREAMING);
+        var device2State = mAudioStreamMediaService.mStateByDevice.get(mDevice2);
+        assertThat(device2State).isNotNull();
+        assertThat(device2State).isEqualTo(PAUSED);
+        var device1ToSelectedChannel = mAudioStreamMediaService.mSelectedChannelCacheByDevice.get(
+                mDevice);
+        assertThat(device1ToSelectedChannel).isNotNull();
+        assertThat(device1ToSelectedChannel).isEqualTo(new HashSet<>(List.of(1)));
+        var device2ToSelectedChannel = mAudioStreamMediaService.mSelectedChannelCacheByDevice.get(
+                mDevice2);
+        assertThat(device2ToSelectedChannel).isNotNull();
+        assertThat(device2ToSelectedChannel).isEqualTo(new HashSet<>(List.of(2)));
+        verify(mAudioStreamMediaService, never()).stopSelf();
+        verify(mNotificationManager).notify(anyInt(), any());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_onStartCommand_updateState() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+        Intent intent2 = setupReceiveDataIntent(1, mDevice, PAUSED, new HashSet<>(List.of(2)));
+        mAudioStreamMediaService.onStartCommand(intent2, /* flags= */ 0, /* startId= */ 0);
+
+        ArgumentCaptor<Notification> notificationCapture = ArgumentCaptor.forClass(
+                Notification.class);
+        verify(mAudioStreamMediaService).startForeground(anyInt(), notificationCapture.capture());
+        var notification = notificationCapture.getValue();
+        assertThat(notification.getSmallIcon()).isNotNull();
+        assertThat(notification.isStyle(Notification.MediaStyle.class)).isTrue();
+
+        assertThat(mAudioStreamMediaService.mStateByDevice).isNotNull();
+        var deviceState = mAudioStreamMediaService.mStateByDevice.get(mDevice);
+        assertThat(deviceState).isNotNull();
+        assertThat(deviceState).isEqualTo(PAUSED);
+        var device1ToSelectedChannel = mAudioStreamMediaService.mSelectedChannelCacheByDevice.get(
+                mDevice);
+        assertThat(device1ToSelectedChannel).isNotNull();
+        assertThat(device1ToSelectedChannel).isEqualTo(new HashSet<>(List.of(2)));
+        verify(mAudioStreamMediaService, never()).stopSelf();
+        verify(mNotificationManager).notify(anyInt(), any());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_onStartCommand_newBroadcastId() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+        Intent intent2 = setupReceiveDataIntent(2, mDevice2, PAUSED, new HashSet<>(List.of(2)));
+        mAudioStreamMediaService.onStartCommand(intent2, /* flags= */ 0, /* startId= */ 0);
+
+        ArgumentCaptor<Notification> notificationCapture = ArgumentCaptor.forClass(
+                Notification.class);
+        verify(mAudioStreamMediaService).startForeground(anyInt(), notificationCapture.capture());
+        var notification = notificationCapture.getValue();
+        assertThat(notification.getSmallIcon()).isNotNull();
+        assertThat(notification.isStyle(Notification.MediaStyle.class)).isTrue();
+
+        assertThat(mAudioStreamMediaService.mStateByDevice).isNotNull();
+        var oldDeviceState = mAudioStreamMediaService.mStateByDevice.get(mDevice);
+        assertThat(oldDeviceState).isNull();
+        var newDeviceState = mAudioStreamMediaService.mStateByDevice.get(mDevice2);
+        assertThat(newDeviceState).isEqualTo(PAUSED);
+        var device1ToSelectedChannel = mAudioStreamMediaService.mSelectedChannelCacheByDevice.get(
+                mDevice2);
+        assertThat(device1ToSelectedChannel).isNotNull();
+        assertThat(device1ToSelectedChannel).isEqualTo(new HashSet<>(List.of(2)));
+        verify(mAudioStreamMediaService, never()).stopSelf();
+        verify(mNotificationManager).notify(anyInt(), any());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_getPlayState_streaming_noActionButton() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(emptyList()));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.getPlaybackState().toString()).isEqualTo(
+                mAudioStreamMediaService.mPlayStatePlayingNoActionBuilder.build().toString());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_getPlayState_streaming_hasActionButton() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.getPlaybackState().toString()).isEqualTo(
+                mAudioStreamMediaService.mPlayStatePlayingBuilder.build().toString());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_getPlayState_pausedByReceiver_noActionButton() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, PAUSED_BY_RECEIVER,
+                new HashSet<>(emptyList()));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.getPlaybackState().toString()).isEqualTo(
+                mAudioStreamMediaService.mPlayStatePausedNoActionBuilder.build().toString());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_getPlayState_pausedByReceiver_hasActionButton() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, PAUSED_BY_RECEIVER,
+                new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.getPlaybackState().toString()).isEqualTo(
+                mAudioStreamMediaService.mPlayStatePausedBuilder.build().toString());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_getPlayState_paused_noActionButton() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+        mAudioStreamMediaService.onCreate();
+        Intent intent1 = setupReceiveDataIntent(1, mDevice, PAUSED, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent1, /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.getPlaybackState().toString()).isEqualTo(
+                mAudioStreamMediaService.mPlayStatePausedNoActionBuilder.build().toString());
+    }
+
+    @Test
     public void onStartCommand_createSessionAndStartForeground() {
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
         var devices = new ArrayList<BluetoothDevice>();
         devices.add(mDevice);
 
@@ -302,6 +539,66 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
+    public void assistantCallback_onReceiveStateChanged_connected_doNothing() {
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+
+        mAudioStreamMediaService.onCreate();
+        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.mBroadcastAssistantCallback).isNotNull();
+        List<Long> bisSyncState = new ArrayList<>();
+        bisSyncState.add(1L);
+        when(mBroadcastReceiveState.getBisSyncState()).thenReturn(bisSyncState);
+        when(mDevice.getAddress()).thenReturn(DEVICE_ADDRESS);
+        when(mBroadcastReceiveState.getSourceDevice()).thenReturn(mDevice);
+
+        mAudioStreamMediaService.mBroadcastAssistantCallback.onReceiveStateChanged(
+                mDevice, /* sourceId= */ 0, /* state= */ mBroadcastReceiveState);
+
+        verify(mNotificationManager, never()).notify(anyInt(), any());
+    }
+
+    @Test
+    public void assistantCallback_onReceiveStateChanged_hysteresis_updateNotification() {
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+
+        mAudioStreamMediaService.onCreate();
+        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.mBroadcastAssistantCallback).isNotNull();
+        when(mBroadcastReceiveState.getBisSyncState()).thenReturn(new ArrayList<>());
+        when(mDevice.getAddress()).thenReturn(DEVICE_ADDRESS);
+        when(mBroadcastReceiveState.getSourceDevice()).thenReturn(mDevice);
+
+        mAudioStreamMediaService.mBroadcastAssistantCallback.onReceiveStateChanged(
+                mDevice, /* sourceId= */ 0, /* state= */ mBroadcastReceiveState);
+
+        verify(mNotificationManager).notify(anyInt(), any());
+    }
+
+    @Test
+    public void assistantCallback_onReceiveStateChanged_hysteresis_flagOff_doNothing() {
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+
+        mAudioStreamMediaService.onCreate();
+        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
+
+        assertThat(mAudioStreamMediaService.mBroadcastAssistantCallback).isNotNull();
+        mAudioStreamMediaService.mBroadcastAssistantCallback.onReceiveStateChanged(
+                mDevice, /* sourceId= */ 0, /* state= */ mBroadcastReceiveState);
+
+        verify(mBroadcastReceiveState, never()).getBisSyncState();
+        verify(mBroadcastReceiveState, never()).getSourceDevice();
+        verify(mNotificationManager, never()).notify(anyInt(), any());
+    }
+
+    @Test
     public void bluetoothCallback_onBluetoothOff_stopSelf() {
         mAudioStreamMediaService.onCreate();
 
@@ -315,6 +612,7 @@ public class AudioStreamMediaServiceTest {
     @Test
     public void bluetoothCallback_onDeviceDisconnect_stopSelf() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
         mAudioStreamMediaService.onCreate();
         assertThat(mAudioStreamMediaService.mBluetoothCallback).isNotNull();
         mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
@@ -328,45 +626,26 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
-    public void bluetoothCallback_onMemberDeviceDisconnect_stopSelf() {
+    public void byReceiveStateFlagOn_bluetoothCallback_onDeviceDisconnect_stopSelf() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
-        when(mCachedBluetoothDevice.getDevice()).thenReturn(mock(BluetoothDevice.class));
-        CachedBluetoothDevice member = mock(CachedBluetoothDevice.class);
-        when(mCachedBluetoothDevice.getMemberDevice()).thenReturn(Set.of(member));
-        when(member.getDevice()).thenReturn(mDevice);
-        var devices = new ArrayList<BluetoothDevice>();
-        devices.add(mDevice);
-
-        Intent intent = new Intent();
-        intent.putExtra(BROADCAST_ID, 1);
-        intent.putParcelableArrayListExtra(DEVICES, devices);
-
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
         mAudioStreamMediaService.onCreate();
         assertThat(mAudioStreamMediaService.mBluetoothCallback).isNotNull();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
         mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+
         mAudioStreamMediaService.mBluetoothCallback.onProfileConnectionStateChanged(
-                mCachedBluetoothDevice,
-                BluetoothAdapter.STATE_DISCONNECTED,
+                mCachedBluetoothDevice, BluetoothAdapter.STATE_DISCONNECTED,
                 BluetoothProfile.LE_AUDIO_BROADCAST_ASSISTANT);
 
         verify(mAudioStreamMediaService).stopSelf();
-    }
-
-    @Test
-    public void mediaSessionCallback_onSeekTo_updateNotification() {
-        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
-
-        mAudioStreamMediaService.onCreate();
-        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
-        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
-        mAudioStreamMediaService.mMediaSessionCallback.onSeekTo(100);
-
-        verify(mNotificationManager).notify(anyInt(), any());
     }
 
     @Test
     public void mediaSessionCallback_onPause_setVolume() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
 
         mAudioStreamMediaService.onCreate();
         mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
@@ -382,8 +661,65 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onPause_setVolume() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onPause();
+
+        verify(mVolumeControlProfile).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mFeatureFactory.metricsFeatureProvider).action(any(),
+                eq(SettingsEnums.ACTION_AUDIO_STREAM_NOTIFICATION_MUTE_BUTTON_CLICK), eq(1));
+    }
+
+    @Test
+    public void byReceiveStateFlagOff_mediaSessionCallback_onPause_modifySource() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        when(mBroadcastReceiveState.getBroadcastId()).thenReturn(1);
+        when(mLeBroadcastAssistant.getAllSources(any())).thenReturn(
+                List.of(mBroadcastReceiveState));
+        when(mDevice.getAddress()).thenReturn(DEVICE_ADDRESS);
+        when(mBroadcastReceiveState.getSourceDevice()).thenReturn(mDevice);
+
+        mAudioStreamMediaService.onCreate();
+        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onPause();
+
+        verify(mVolumeControlProfile, never()).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mLeBroadcastAssistant).getSourceMetadata(any(), anyInt());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onPause_modifySource() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onPause();
+
+        verify(mVolumeControlProfile, never()).setDeviceVolume(any(), anyInt(), anyBoolean());
+        // One is for modifying source, the other one is for getting broadcast name.
+        verify(mLeBroadcastAssistant, times(2)).getSourceMetadata(any(), anyInt());
+    }
+
+    @Test
     public void mediaSessionCallback_onPlay_setVolume() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
 
         mAudioStreamMediaService.onCreate();
         mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
@@ -399,8 +735,147 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onPlay_setVolume() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onPlay();
+
+        verify(mVolumeControlProfile).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mFeatureFactory.metricsFeatureProvider).action(any(),
+                eq(SettingsEnums.ACTION_AUDIO_STREAM_NOTIFICATION_MUTE_BUTTON_CLICK), eq(0));
+    }
+
+    @Test
+    public void byReceiveStateFlagOff_mediaSessionCallback_onPlay_modifySource() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        when(mBroadcastReceiveState.getBroadcastId()).thenReturn(1);
+        when(mLeBroadcastAssistant.getAllSources(any())).thenReturn(
+                List.of(mBroadcastReceiveState));
+        when(mDevice.getAddress()).thenReturn(DEVICE_ADDRESS);
+        when(mBroadcastReceiveState.getSourceDevice()).thenReturn(mDevice);
+
+        mAudioStreamMediaService.onCreate();
+        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onPlay();
+
+        verify(mVolumeControlProfile, never()).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mLeBroadcastAssistant).getSourceMetadata(any(), anyInt());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onPlay_modifySource() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onPlay();
+
+        verify(mVolumeControlProfile, never()).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mLeBroadcastAssistant).getSourceMetadata(any(), anyInt());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onButtonEventPlay_setVolume() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+
+        Intent buttonEvent = new Intent();
+        buttonEvent.putExtra(Intent.EXTRA_KEY_EVENT,
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY));
+        mAudioStreamMediaService.mMediaSessionCallback.onMediaButtonEvent(buttonEvent);
+
+        verify(mVolumeControlProfile).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mFeatureFactory.metricsFeatureProvider).action(any(),
+                eq(SettingsEnums.ACTION_AUDIO_STREAM_NOTIFICATION_MUTE_BUTTON_CLICK), eq(0));
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onButtonEventPlay_modifySource() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+
+        Intent buttonEvent = new Intent();
+        buttonEvent.putExtra(Intent.EXTRA_KEY_EVENT,
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY));
+        mAudioStreamMediaService.mMediaSessionCallback.onMediaButtonEvent(buttonEvent);
+
+        verify(mVolumeControlProfile, never()).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mLeBroadcastAssistant).getSourceMetadata(any(), anyInt());
+    }
+
+    @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onButtonEventPause_setVolume() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+
+        Intent buttonEvent = new Intent();
+        buttonEvent.putExtra(Intent.EXTRA_KEY_EVENT,
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE));
+        mAudioStreamMediaService.mMediaSessionCallback.onMediaButtonEvent(buttonEvent);
+
+        verify(mVolumeControlProfile).setDeviceVolume(any(), anyInt(), anyBoolean());
+        verify(mFeatureFactory.metricsFeatureProvider).action(any(),
+                eq(SettingsEnums.ACTION_AUDIO_STREAM_NOTIFICATION_MUTE_BUTTON_CLICK), eq(1));
+    }
+
+
+    @Test
+    public void byReceiveStateFlagOn_mediaSessionCallback_onButtonEventPause_modifySource() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_PLAY_PAUSE_BY_MODIFY_SOURCE);
+
+        mAudioStreamMediaService.onCreate();
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+
+        Intent buttonEvent = new Intent();
+        buttonEvent.putExtra(Intent.EXTRA_KEY_EVENT,
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE));
+        mAudioStreamMediaService.mMediaSessionCallback.onMediaButtonEvent(buttonEvent);
+
+        verify(mVolumeControlProfile, never()).setDeviceVolume(any(), anyInt(), anyBoolean());
+        // One is for modifying source, the other one is for getting broadcast name.
+        verify(mLeBroadcastAssistant, times(2)).getSourceMetadata(any(), anyInt());
+    }
+
+    @Test
     public void mediaSessionCallback_onCustomAction_leaveBroadcast() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
 
         mAudioStreamMediaService.onCreate();
         mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
@@ -416,16 +891,20 @@ public class AudioStreamMediaServiceTest {
     }
 
     @Test
-    public void volumeControlCallback_onDeviceVolumeChanged_updateNotification() {
+    public void byReceiveStateFlagOn_mediaSessionCallback_onCustomAction_leaveBroadcast() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_STREAM_MEDIA_SERVICE_BY_RECEIVE_STATE);
 
         mAudioStreamMediaService.onCreate();
-        assertThat(mAudioStreamMediaService.mVolumeControlCallback).isNotNull();
-        mAudioStreamMediaService.onStartCommand(setupIntent(), /* flags= */ 0, /* startId= */ 0);
-        mAudioStreamMediaService.mVolumeControlCallback.onDeviceVolumeChanged(
-                mDevice, /* volume= */ 0);
+        Intent intent = setupReceiveDataIntent(1, mDevice, STREAMING, new HashSet<>(List.of(1)));
+        mAudioStreamMediaService.onStartCommand(intent, /* flags= */ 0, /* startId= */ 0);
+        assertThat(mAudioStreamMediaService.mMediaSessionCallback).isNotNull();
+        mAudioStreamMediaService.mMediaSessionCallback.onCustomAction(LEAVE_BROADCAST_ACTION,
+                Bundle.EMPTY);
 
-        verify(mNotificationManager).notify(anyInt(), any());
+        verify(mAudioStreamsHelper).removeSource(anyInt());
+        verify(mFeatureFactory.metricsFeatureProvider).action(any(),
+                eq(SettingsEnums.ACTION_AUDIO_STREAM_NOTIFICATION_LEAVE_BUTTON_CLICK));
     }
 
     @Test
@@ -443,6 +922,17 @@ public class AudioStreamMediaServiceTest {
         Intent intent = new Intent();
         intent.putExtra(BROADCAST_ID, 1);
         intent.putParcelableArrayListExtra(DEVICES, devices);
+        return intent;
+    }
+
+    private Intent setupReceiveDataIntent(int broadcastId, BluetoothDevice device,
+            LocalBluetoothLeBroadcastAssistant.LocalBluetoothLeBroadcastSourceState state,
+            HashSet<Integer> selectedChannelIndex) {
+        when(mCachedBluetoothDevice.getDevice()).thenReturn(mDevice);
+        Intent intent = new Intent();
+        intent.putExtra(EXTRA_PRIVATE_BROADCAST_RECEIVE_DATA,
+                new PrivateBroadcastReceiveData(device, 1, broadcastId, "programInfo", state,
+                        selectedChannelIndex));
         return intent;
     }
 }

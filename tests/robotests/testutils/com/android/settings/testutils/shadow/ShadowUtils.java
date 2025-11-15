@@ -46,11 +46,11 @@ public class ShadowUtils {
     private static ComponentName sDeviceOwnerComponentName;
     private static Map<String, String> sAppNameMap;
     private static boolean sIsSystemAlertWindowEnabled;
-    private static boolean sIsVoiceCapable;
     private static ArraySet<String> sResultLinks = new ArraySet<>();
     private static boolean sIsBatteryPresent;
     private static boolean sIsMultipleBiometricsSupported;
     private static boolean sIsPrivateProfile;
+    private static boolean sIsProtectedPackage;
 
     @Implementation
     protected static int enforceSameOwner(Context context, int userId) {
@@ -79,11 +79,11 @@ public class ShadowUtils {
         sFingerprintManager = null;
         sIsUserAMonkey = false;
         sIsDemoUser = false;
-        sIsVoiceCapable = false;
         sResultLinks = new ArraySet<>();
         sIsBatteryPresent = true;
         sIsMultipleBiometricsSupported = false;
         sIsPrivateProfile = false;
+        sIsProtectedPackage = false;
     }
 
     public static void setIsDemoUser(boolean isDemoUser) {
@@ -151,15 +151,6 @@ public class ShadowUtils {
     }
 
     @Implementation
-    protected static boolean isVoiceCapable(Context context) {
-        return sIsVoiceCapable;
-    }
-
-    public static void setIsVoiceCapable(boolean isVoiceCapable) {
-        sIsVoiceCapable = isVoiceCapable;
-    }
-
-    @Implementation
     protected static ArraySet<String> getHandledDomains(PackageManager pm, String packageName) {
         return sResultLinks;
     }
@@ -198,5 +189,14 @@ public class ShadowUtils {
 
     public static void setIsPrivateProfile(boolean isPrivateProfile) {
         sIsPrivateProfile = isPrivateProfile;
+    }
+
+    @Implementation
+    protected static boolean isProtectedPackage(Context context, String packageName) {
+        return sIsProtectedPackage;
+    }
+
+    public static void setIsProtectedPackage(boolean isProtectedPackage) {
+        sIsProtectedPackage = isProtectedPackage;
     }
 }

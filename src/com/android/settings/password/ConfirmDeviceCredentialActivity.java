@@ -21,6 +21,7 @@ import static android.Manifest.permission.SET_BIOMETRIC_DIALOG_ADVANCED;
 import static android.app.admin.DevicePolicyResources.Strings.Settings.CONFIRM_WORK_PROFILE_PASSWORD_HEADER;
 import static android.app.admin.DevicePolicyResources.Strings.Settings.CONFIRM_WORK_PROFILE_PATTERN_HEADER;
 import static android.app.admin.DevicePolicyResources.Strings.Settings.CONFIRM_WORK_PROFILE_PIN_HEADER;
+import static android.content.Intent.EXTRA_PACKAGE_NAME;
 import static android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
 
 import static com.android.systemui.biometrics.Utils.toBitmap;
@@ -83,6 +84,7 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
             "biometric_prompt_negative_button_text";
     public static final String BIOMETRIC_PROMPT_HIDE_BACKGROUND =
             "biometric_prompt_hide_background";
+    public static final String EXTRA_DATA = "extra_data";
     public static final int BIOMETRIC_LOCKOUT_ERROR_RESULT = 100;
 
     public static class InternalActivity extends ConfirmDeviceCredentialActivity {
@@ -107,6 +109,7 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
     private boolean mGoingToBackground;
     private boolean mWaitingForBiometricCallback;
     private int mBiometricsAuthenticators;
+    private Intent mIntentData;
 
     private Executor mExecutor = (runnable -> {
         mHandler.post(runnable);
@@ -131,7 +134,7 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
                         showConfirmCredentials();
                     } else {
                         Log.i(TAG, "Finishing, device credential not requested");
-                        if (Flags.mandatoryBiometrics()
+                        if (!Flags.bpFallbackOptions()
                                 && errorCode == BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT) {
                             setResult(BIOMETRIC_LOCKOUT_ERROR_RESULT);
                         }
@@ -152,10 +155,12 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
                     == BiometricPrompt.AUTHENTICATION_RESULT_TYPE_DEVICE_CREDENTIAL;
             ConfirmDeviceCredentialUtils.reportSuccessfulAttempt(mLockPatternUtils, mUserManager,
                     mDevicePolicyManager, mUserId, isStrongAuth);
-            ConfirmDeviceCredentialUtils.checkForPendingIntent(
-                    ConfirmDeviceCredentialActivity.this);
+            if (isInternalActivity()) {
+                ConfirmDeviceCredentialUtils.checkForPendingIntent(
+                        ConfirmDeviceCredentialActivity.this);
+            }
 
-            setResult(Activity.RESULT_OK);
+            setResult(Activity.RESULT_OK, mIntentData);
             finish();
         }
 
@@ -204,6 +209,7 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
         mBiometricsAuthenticators = intent.getIntExtra(BIOMETRIC_PROMPT_AUTHENTICATORS,
                 BiometricManager.Authenticators.DEVICE_CREDENTIAL
                         | BiometricManager.Authenticators.BIOMETRIC_WEAK);
+        mIntentData = intent.getParcelableExtra(EXTRA_DATA, Intent.class);
         final String negativeButtonText = intent.getStringExtra(
                 BIOMETRIC_PROMPT_NEGATIVE_BUTTON_TEXT);
         final boolean frp =
@@ -244,7 +250,14 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
         promptInfo.setDisallowBiometricsIfPolicyExists(mCheckDevicePolicyManager);
         promptInfo.setAuthenticators(mBiometricsAuthenticators);
         promptInfo.setNegativeButtonText(negativeButtonText);
-        promptInfo.setRealCallerForConfirmDeviceCredentialActivity(getCallingActivity());
+
+        final String callerPackageName = intent.getStringExtra(EXTRA_PACKAGE_NAME);
+        if (isInternalActivity() && callerPackageName != null) {
+            promptInfo.setRealCallerForConfirmDeviceCredentialActivity(
+                    new ComponentName(callerPackageName, ""));
+        } else {
+            promptInfo.setRealCallerForConfirmDeviceCredentialActivity(getCallingActivity());
+        }
 
         if (android.multiuser.Flags.enablePrivateSpaceFeatures()
                 && android.multiuser.Flags.usePrivateSpaceIconInBiometricPrompt()
@@ -377,7 +390,14 @@ public class ConfirmDeviceCredentialActivity extends FragmentActivity {
                 setBiometricPromptPropertiesForPrivateProfile(promptInfo);
                 showBiometricPrompt(promptInfo, effectiveUserId);
                 launchedBiometric = true;
+            } else if (Flags.privateSpaceBp()) {
+                promptInfo.setAuthenticators(BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+                setBiometricPromptPropertiesForPrivateProfile(promptInfo);
+                showBiometricPrompt(promptInfo, mUserId);
+                launchedBiometric = true;
             } else {
+                // TODO(b/376328272): Remove custom private space behavior
+                mDetails = Utils.getConfirmCredentialStringForUser(this, mUserId, credentialType);
                 showConfirmCredentials();
                 launchedCDC = true;
             }

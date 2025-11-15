@@ -20,24 +20,34 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.VpnManager
 import android.os.UserManager
-import com.android.settings.accessibility.AccessibilityMetricsFeatureProvider
-import com.android.settings.accessibility.AccessibilityMetricsFeatureProviderImpl
+import com.android.settings.accessibility.AccessibilityDisabilitySupportFeatureProvider
+import com.android.settings.accessibility.AccessibilityDisabilitySupportFeatureProviderImpl
+import com.android.settings.accessibility.AccessibilityFeedbackFeatureProvider
+import com.android.settings.accessibility.AccessibilityFeedbackFeatureProviderImpl
+import com.android.settings.accessibility.AccessibilityPageIdFeatureProvider
+import com.android.settings.accessibility.AccessibilityPageIdFeatureProviderImpl
 import com.android.settings.accessibility.AccessibilitySearchFeatureProvider
 import com.android.settings.accessibility.AccessibilitySearchFeatureProviderImpl
 import com.android.settings.accounts.AccountFeatureProvider
 import com.android.settings.accounts.AccountFeatureProviderImpl
 import com.android.settings.applications.ApplicationFeatureProviderImpl
+import com.android.settings.biometrics.BiometricsFeatureProvider
+import com.android.settings.biometrics.BiometricsFeatureProviderImpl
 import com.android.settings.biometrics.face.FaceFeatureProvider
 import com.android.settings.biometrics.face.FaceFeatureProviderImpl
 import com.android.settings.biometrics.fingerprint.FingerprintFeatureProvider
 import com.android.settings.biometrics.fingerprint.FingerprintFeatureProviderImpl
 import com.android.settings.bluetooth.BluetoothFeatureProvider
 import com.android.settings.bluetooth.BluetoothFeatureProviderImpl
+import com.android.settings.connecteddevice.audiosharing.AudioSharingFeatureProvider
+import com.android.settings.connecteddevice.audiosharing.AudioSharingFeatureProviderImpl
 import com.android.settings.connecteddevice.dock.DockUpdaterFeatureProviderImpl
 import com.android.settings.connecteddevice.fastpair.FastPairFeatureProvider
 import com.android.settings.connecteddevice.fastpair.FastPairFeatureProviderImpl
 import com.android.settings.connecteddevice.stylus.StylusFeatureProvider
 import com.android.settings.connecteddevice.stylus.StylusFeatureProviderImpl
+import com.android.settings.connecteddevice.threadnetwork.ThreadNetworkFeatureProvider
+import com.android.settings.connecteddevice.threadnetwork.ThreadNetworkFeatureProviderImpl
 import com.android.settings.core.instrumentation.SettingsMetricsFeatureProvider
 import com.android.settings.dashboard.DashboardFeatureProviderImpl
 import com.android.settings.dashboard.suggestions.SuggestionFeatureProvider
@@ -145,7 +155,13 @@ open class FeatureFactoryImpl : FeatureFactory() {
         BluetoothFeatureProviderImpl()
     }
 
-    override val faceFeatureProvider: FaceFeatureProvider by lazy { FaceFeatureProviderImpl() }
+    override val biometricsFeatureProvider: BiometricsFeatureProvider by lazy {
+        BiometricsFeatureProviderImpl()
+    }
+
+    override val faceFeatureProvider: FaceFeatureProvider by lazy {
+        FaceFeatureProviderImpl(appContext)
+    }
 
     override val fingerprintFeatureProvider: FingerprintFeatureProvider by lazy {
         FingerprintFeatureProviderImpl()
@@ -159,12 +175,20 @@ open class FeatureFactoryImpl : FeatureFactory() {
         SecuritySettingsFeatureProviderImpl()
     }
 
+    override val accessibilityFeedbackFeatureProvider: AccessibilityFeedbackFeatureProvider
+        by lazy {  AccessibilityFeedbackFeatureProviderImpl() }
+
+    override val accessibilityDisabilitySupportFeatureProvider:
+            AccessibilityDisabilitySupportFeatureProvider by lazy {
+                AccessibilityDisabilitySupportFeatureProviderImpl()
+            }
+
     override val accessibilitySearchFeatureProvider: AccessibilitySearchFeatureProvider by lazy {
         AccessibilitySearchFeatureProviderImpl()
     }
 
-    override val accessibilityMetricsFeatureProvider: AccessibilityMetricsFeatureProvider by lazy {
-        AccessibilityMetricsFeatureProviderImpl()
+    override val accessibilityPageIdFeatureProvider: AccessibilityPageIdFeatureProvider by lazy {
+        AccessibilityPageIdFeatureProviderImpl()
     }
 
     override val advancedVpnFeatureProvider by lazy { AdvancedVpnFeatureProviderImpl() }
@@ -179,8 +203,16 @@ open class FeatureFactoryImpl : FeatureFactory() {
         StylusFeatureProviderImpl()
     }
 
+    override val threadNetworkFeatureProvider: ThreadNetworkFeatureProvider by lazy {
+        ThreadNetworkFeatureProviderImpl()
+    }
+
     override val fastPairFeatureProvider: FastPairFeatureProvider by lazy {
         FastPairFeatureProviderImpl()
+    }
+
+    override val audioSharingFeatureProvider: AudioSharingFeatureProvider by lazy {
+        AudioSharingFeatureProviderImpl()
     }
 
     override val privateSpaceLoginFeatureProvider: PrivateSpaceLoginFeatureProvider by lazy {

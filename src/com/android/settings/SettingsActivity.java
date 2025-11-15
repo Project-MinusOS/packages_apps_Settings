@@ -73,6 +73,7 @@ import com.android.settings.widget.SettingsMainSwitchBar;
 import com.android.settingslib.core.instrumentation.Instrumentable;
 import com.android.settingslib.core.instrumentation.SharedPreferencesLogger;
 import com.android.settingslib.drawer.DashboardCategory;
+import com.android.settingslib.widget.SettingsThemeHelper;
 
 import com.google.android.setupcompat.util.WizardManagerHelper;
 
@@ -161,6 +162,12 @@ public class SettingsActivity extends SettingsBaseActivity
     public static final String EXTRA_SHOW_FRAGMENT_TAB =
             ":settings:show_fragment_tab";
 
+    /**
+     * Whether the settings homepage activity is initiated from a search result deeplink.
+     */
+    public static final String EXTRA_IS_DEEPLINK_HOME_STARTED_FROM_SEARCH =
+            ":settings:is_deeplink_home_started_from_search";
+
     public static final String META_DATA_KEY_FRAGMENT_CLASS =
             "com.android.settings.FRAGMENT_CLASS";
 
@@ -168,6 +175,9 @@ public class SettingsActivity extends SettingsBaseActivity
             "com.android.settings.HIGHLIGHT_MENU_KEY";
 
     private static final String EXTRA_UI_OPTIONS = "settings:ui_options";
+
+    private static final int EXPRESSIVE_BACK_ICON =
+            com.android.settingslib.collapsingtoolbar.R.drawable.settingslib_expressive_icon_back;
 
     private String mFragmentClass;
     private String mHighlightMenuKey;
@@ -237,10 +247,7 @@ public class SettingsActivity extends SettingsBaseActivity
 
     private int lookupMetricsCategory() {
         int category = SettingsEnums.PAGE_UNKNOWN;
-        Bundle args = null;
-        if (getIntent() != null) {
-            args = getIntent().getBundleExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS);
-        }
+        Bundle args = getInitialFragmentArguments(getIntent());
 
         Fragment fragment = Utils.getTargetFragment(this, getMetricsTag(), args);
 
@@ -253,10 +260,7 @@ public class SettingsActivity extends SettingsBaseActivity
     }
 
     private String getMetricsTag() {
-        String tag = null;
-        if (getIntent() != null && getIntent().hasExtra(EXTRA_SHOW_FRAGMENT)) {
-            tag = getInitialFragmentName(getIntent());
-        }
+        String tag = getInitialFragmentName(getIntent());
 
         if (TextUtils.isEmpty(tag)) {
             Log.w(LOG_TAG, "MetricsTag is invalid " + tag);
@@ -301,10 +305,23 @@ public class SettingsActivity extends SettingsBaseActivity
         // If this is in setup flow, don't apply theme. Because light theme needs to be applied
         // in SettingsBaseActivity#onCreate().
         if (isSubSettings(intent) && !WizardManagerHelper.isAnySetupWizard(getIntent())) {
-            setTheme(R.style.Theme_SubSettings);
+            int themeId = SettingsThemeHelper.isExpressiveTheme(this)
+                    ? R.style.Theme_SubSettings_Expressive : R.style.Theme_SubSettings;
+            setTheme(themeId);
         }
 
         setContentView(R.layout.settings_main_prefs);
+        mMainSwitch = findViewById(R.id.switch_bar);
+        if (mMainSwitch != null) {
+            mMainSwitch.setMetricsCategory(lookupMetricsCategory());
+            mMainSwitch.setTranslationZ(findViewById(R.id.main_content).getTranslationZ() + 1);
+            if (SettingsThemeHelper.isExpressiveTheme(this)) {
+                final int paddingHorizontal = getResources().getDimensionPixelSize(
+                        com.android.settingslib.widget.theme
+                                .R.dimen.settingslib_expressive_space_small1);
+                mMainSwitch.setPadding(paddingHorizontal, 0, paddingHorizontal, 0);
+            }
+        }
 
         getSupportFragmentManager().addOnBackStackChangedListener(this);
 
@@ -322,12 +339,6 @@ public class SettingsActivity extends SettingsBaseActivity
             }
         } else {
             launchSettingFragment(initialFragmentName, intent);
-        }
-
-        mMainSwitch = findViewById(R.id.switch_bar);
-        if (mMainSwitch != null) {
-            mMainSwitch.setMetricsCategory(lookupMetricsCategory());
-            mMainSwitch.setTranslationZ(findViewById(R.id.main_content).getTranslationZ() + 1);
         }
 
         // see if we should show Back/Next buttons
@@ -388,6 +399,9 @@ public class SettingsActivity extends SettingsBaseActivity
         if (actionBar != null) {
             actionBar.setDisplayHomeAsUpEnabled(isActionBarButtonEnabled);
             actionBar.setHomeButtonEnabled(isActionBarButtonEnabled);
+            if (SettingsThemeHelper.isExpressiveTheme(this)) {
+                actionBar.setHomeAsUpIndicator(EXPRESSIVE_BACK_ICON);
+            }
             actionBar.setDisplayShowTitleEnabled(true);
         }
     }
@@ -482,10 +496,27 @@ public class SettingsActivity extends SettingsBaseActivity
         return intent.getStringExtra(EXTRA_SHOW_FRAGMENT);
     }
 
+    /** Returns the arguments to initial fragment that the activity will launch. */
+    @VisibleForTesting
+    public @Nullable Bundle getInitialFragmentArguments(Intent intent) {
+        return intent.getBundleExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS);
+    }
+
     @Override
     protected void onApplyThemeResource(Theme theme, int resid, boolean first) {
         theme.applyStyle(R.style.SetupWizardPartnerResource, true);
         super.onApplyThemeResource(theme, resid, first);
+    }
+
+    /** Returns the current theme and checks if needing to apply expressive theme. */
+    @Override
+    public Theme getTheme() {
+        Theme theme = super.getTheme();
+        if (!WizardManagerHelper.isAnySetupWizard(getIntent())
+                && SettingsThemeHelper.isExpressiveTheme(this)) {
+            theme.applyStyle(R.style.Theme_SubSettings_Expressive, true);
+        }
+        return theme;
     }
 
     @Override
@@ -511,7 +542,7 @@ public class SettingsActivity extends SettingsBaseActivity
 
             setTitleFromIntent(intent);
 
-            Bundle initialArguments = intent.getBundleExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS);
+            Bundle initialArguments = getInitialFragmentArguments(intent);
             switchToFragment(initialFragmentName, initialArguments, true,
                     mInitialTitleResId, mInitialTitle);
         } else {
@@ -648,7 +679,7 @@ public class SettingsActivity extends SettingsBaseActivity
         if (startingFragment != null) {
             Intent modIntent = new Intent(superIntent);
             modIntent.putExtra(EXTRA_SHOW_FRAGMENT, startingFragment);
-            Bundle args = superIntent.getBundleExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS);
+            Bundle args = getInitialFragmentArguments(superIntent);
             if (args != null) {
                 args = new Bundle(args);
             } else {

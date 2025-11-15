@@ -45,9 +45,11 @@ import androidx.preference.PreferenceViewHolder;
 import com.android.settings.R;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.widget.GearPreference;
+import com.android.settingslib.bluetooth.BluetoothUtils;
 import com.android.settingslib.bluetooth.CachedBluetoothDevice;
 import com.android.settingslib.bluetooth.LocalBluetoothManager;
 import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.flags.Flags;
 import com.android.settingslib.utils.ThreadUtils;
 
 import java.lang.annotation.Retention;
@@ -93,6 +95,7 @@ public final class BluetoothDevicePreference extends GearPreference {
     private final int mType;
 
     private AlertDialog mDisconnectDialog;
+    @Nullable private AlertDialog mBlockPairingDialog;
     private String contentDescription = null;
     private boolean mHideSecondTarget = false;
     private boolean mIsCallbackRemoved = true;
@@ -294,6 +297,10 @@ public final class BluetoothDevicePreference extends GearPreference {
     void onPreferenceAttributesChanged() {
         try {
             ThreadUtils.postOnBackgroundThread(() -> {
+                if (mCachedDevice.getDevice() != null) {
+                    Log.d(TAG, "onPreferenceAttributesChanged, start updating for device "
+                            + mCachedDevice.getDevice().getAnonymizedAddress());
+                }
                 @Nullable String name = mCachedDevice.getName();
                 // Null check is done at the framework
                 @Nullable String connectionSummary = getConnectionSummary();
@@ -323,6 +330,7 @@ public final class BluetoothDevicePreference extends GearPreference {
                         notifyHierarchyChanged();
                     }
                 });
+                Log.d(TAG, "onPreferenceAttributesChanged, complete updating for device " + name);
             });
         } catch (RejectedExecutionException e) {
             Log.w(TAG, "Handler thread unavailable, skipping getConnectionSummary!");
@@ -338,6 +346,9 @@ public final class BluetoothDevicePreference extends GearPreference {
 
         if (mCachedDevice.getBondState() == BluetoothDevice.BOND_BONDED) {
             ImageView deviceDetails = (ImageView) view.findViewById(R.id.settings_button);
+            deviceDetails.setContentDescription(
+                    getContext().getResources().getString(
+                            R.string.device_detail_icon_content_description, getTitle()));
 
             if (deviceDetails != null) {
                 deviceDetails.setOnClickListener(this);
@@ -406,13 +417,31 @@ public final class BluetoothDevicePreference extends GearPreference {
                     SettingsEnums.ACTION_SETTINGS_BLUETOOTH_CONNECT);
             mCachedDevice.connect();
         } else if (bondState == BluetoothDevice.BOND_NONE) {
-            metricsFeatureProvider.action(context,
-                    SettingsEnums.ACTION_SETTINGS_BLUETOOTH_PAIR);
-            if (!mCachedDevice.hasHumanReadableName()) {
+            var unused = ThreadUtils.postOnBackgroundThread(() -> {
+                if (Flags.enableTemporaryBondDevicesUi()) {
+                    if (BluetoothUtils.isBroadcasting(mLocalBtManager)) {
+                        metricsFeatureProvider.action(context,
+                                SettingsEnums.ACTION_SETTINGS_BLUETOOTH_PAIR_IN_AUDIO_SHARING);
+                    }
+                    if (Utils.shouldBlockPairingInAudioSharing(mLocalBtManager)) {
+                        context.getMainExecutor().execute(() ->
+                                mBlockPairingDialog =
+                                        Utils.showBlockPairingDialog(context, mBlockPairingDialog,
+                                                mLocalBtManager));
+                        metricsFeatureProvider.action(context,
+                                SettingsEnums
+                                        .ACTION_SETTINGS_BLUETOOTH_PAIR_BLOCKED_IN_AUDIO_SHARING);
+                        return;
+                    }
+                }
                 metricsFeatureProvider.action(context,
-                        SettingsEnums.ACTION_SETTINGS_BLUETOOTH_PAIR_DEVICES_WITHOUT_NAMES);
-            }
-            pair();
+                        SettingsEnums.ACTION_SETTINGS_BLUETOOTH_PAIR);
+                if (!mCachedDevice.hasHumanReadableName()) {
+                    metricsFeatureProvider.action(context,
+                            SettingsEnums.ACTION_SETTINGS_BLUETOOTH_PAIR_DEVICES_WITHOUT_NAMES);
+                }
+                context.getMainExecutor().execute(() -> pair());
+            });
         }
     }
 

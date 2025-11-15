@@ -23,8 +23,13 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.android.settings.biometrics.fingerprint.feature.ChallengeGeneratedInvoker;
+import com.android.settings.biometrics.fingerprint.feature.FingerprintExtPreferencesProvider;
 import com.android.settings.biometrics.fingerprint.feature.SfpsEnrollmentFeature;
 import com.android.settings.biometrics.fingerprint.feature.SfpsRestToUnlockFeature;
+
+import java.util.Collections;
+import java.util.List;
 
 public interface FingerprintFeatureProvider {
     /**
@@ -57,7 +62,39 @@ public interface FingerprintFeatureProvider {
      * @return the provider
      */
     @NonNull
-    default FingerprintEnrollActivityClassProvider getEnrollActivityClassProvider() {
+    default FingerprintEnrollActivityClassProvider getEnrollActivityClassProvider(@NonNull Context context) {
         return FingerprintEnrollActivityClassProvider.getInstance();
     }
+
+    /**
+     * Gets new Preferences in Fingerprint Settings
+     */
+    @NonNull
+    default FingerprintExtPreferencesProvider getExtPreferenceProvider(
+            @NonNull Context context
+    ) {
+        return new FingerprintExtPreferencesProvider(context);
+    }
+
+    /**
+     * Gets the feature provider for FingerprintSettings page
+     * @return the provider
+     */
+    @NonNull
+    default FingerprintSettingsFeatureProvider getFingerprintSettingsFeatureProvider() {
+        return FingerprintSettingsFeatureProvider.getInstance();
+    }
+
+    @NonNull
+    default List<ChallengeGeneratedInvoker> getChallengeGeneratedInvokers() {
+        return Collections.emptyList();
+    }
+
+    /** Returns the parental consent page. */
+    @NonNull
+    Class<? extends FingerprintEnrollParentalConsent> getParentalConsentPage();
+
+    /** Returns the string resources of the parental consent page. */
+    @NonNull
+    int[] getParentalConsentStringRes();
 }

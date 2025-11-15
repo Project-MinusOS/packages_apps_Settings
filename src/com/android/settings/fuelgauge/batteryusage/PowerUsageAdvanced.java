@@ -32,6 +32,8 @@ import android.util.Pair;
 import androidx.annotation.VisibleForTesting;
 import androidx.loader.app.LoaderManager;
 import androidx.loader.content.Loader;
+import androidx.preference.PreferenceScreen;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
@@ -150,6 +152,13 @@ public class PowerUsageAdvanced extends PowerUsageBase {
     }
 
     @Override
+    protected RecyclerView.Adapter onCreateAdapter(PreferenceScreen preferenceScreen) {
+        final RecyclerView.Adapter adapter = super.onCreateAdapter(preferenceScreen);
+        adapter.setHasStableIds(true);
+        return adapter;
+    }
+
+    @Override
     protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
         final List<AbstractPreferenceController> controllers = new ArrayList<>();
         mBatteryTipsController = new BatteryTipsController(context);
@@ -214,20 +223,22 @@ public class PowerUsageAdvanced extends PowerUsageBase {
         if (!isResumed() || mBatteryLevelData == null) {
             return;
         }
-        mBatteryUsageMap =
-                DataProcessor.generateBatteryUsageMap(
-                        getContext(), batteryDiffDataMap, mBatteryLevelData.orElse(null));
-        Log.d(TAG, "onBatteryDiffDataMapUpdate: " + mBatteryUsageMap);
-        DataProcessor.loadLabelAndIcon(mBatteryUsageMap);
-        onSelectedSlotDataUpdated();
-        detectAnomaly();
-        logScreenUsageTime();
-        if (mBatteryChartPreferenceController != null
-                && mBatteryLevelData.isEmpty()
-                && isBatteryUsageMapNullOrEmpty()) {
-            // No available battery usage and battery level data.
-            mBatteryChartPreferenceController.showEmptyChart();
-        }
+        mHandler.post(() -> {
+            mBatteryUsageMap =
+                    DataProcessor.generateBatteryUsageMap(
+                            getContext(), batteryDiffDataMap, mBatteryLevelData.orElse(null));
+            Log.d(TAG, "onBatteryDiffDataMapUpdate: " + mBatteryUsageMap);
+            DataProcessor.loadLabelAndIcon(mBatteryUsageMap);
+            onSelectedSlotDataUpdated();
+            detectAnomaly();
+            logScreenUsageTime();
+            if (mBatteryChartPreferenceController != null
+                    && mBatteryLevelData.isEmpty()
+                    && isBatteryUsageMapNullOrEmpty()) {
+                // No available battery usage and battery level data.
+                mBatteryChartPreferenceController.showEmptyChart();
+            }
+        });
     }
 
     private void onSelectedSlotDataUpdated() {
@@ -501,10 +512,11 @@ public class PowerUsageAdvanced extends PowerUsageBase {
 
                 @Override
                 public BatteryLevelData loadInBackground() {
+                    Context context = getContext();
                     return DataProcessManager.getBatteryLevelData(
-                            getContext(),
-                            mHandler,
-                            new UserIdsSeries(getContext(), /* isNonUIRequest= */ false),
+                            context,
+                            getLifecycle(),
+                            new UserIdsSeries(context, /* isNonUIRequest= */ false),
                             /* isFromPeriodJob= */ false,
                             PowerUsageAdvanced.this::onBatteryDiffDataMapUpdate);
                 }

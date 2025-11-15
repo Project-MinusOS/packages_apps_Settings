@@ -33,7 +33,9 @@ import static android.view.WindowManager.PROPERTY_COMPAT_ALLOW_USER_ASPECT_RATIO
 
 import static java.lang.Boolean.FALSE;
 
+import android.app.ActivityTaskManager;
 import android.app.AppGlobals;
+import android.app.backup.BackupManager;
 import android.app.compat.CompatChanges;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
@@ -44,6 +46,7 @@ import android.os.RemoteException;
 import android.os.UserHandle;
 import android.provider.DeviceConfig;
 import android.util.ArrayMap;
+import android.util.Log;
 import android.util.SparseIntArray;
 
 import androidx.annotation.NonNull;
@@ -70,7 +73,7 @@ public class UserAspectRatioManager {
             "enable_app_compat_user_aspect_ratio_fullscreen";
     private static final boolean DEFAULT_VALUE_ENABLE_USER_ASPECT_RATIO_FULLSCREEN = true;
 
-    final boolean mIsUserMinAspectRatioAppDefaultFlagEnabled = Flags.userMinAspectRatioAppDefault();
+    private final boolean mIgnoreActivityOrientationRequest;
 
     private final Context mContext;
     private final IPackageManager mIPm;
@@ -78,20 +81,32 @@ public class UserAspectRatioManager {
     private final Map<Integer, String> mUserAspectRatioMap;
     private final Map<Integer, CharSequence> mUserAspectRatioA11yMap;
     private final SparseIntArray mUserAspectRatioOrder;
+    private final ActivityTaskManager mActivityTaskManager;
+    private final BackupManager mBackupManager;
 
     public UserAspectRatioManager(@NonNull Context context) {
-        this(context, AppGlobals.getPackageManager());
+        this(context, AppGlobals.getPackageManager(), new BackupManager(context));
     }
 
     @VisibleForTesting
-    UserAspectRatioManager(@NonNull Context context, @NonNull IPackageManager pm) {
+    UserAspectRatioManager(@NonNull Context context, @NonNull IPackageManager pm,
+            @NonNull ActivityTaskManager activityTaskManager,
+            @NonNull BackupManager backupManager) {
         mContext = context;
         mIPm = pm;
         mUserAspectRatioA11yMap = new ArrayMap<>();
         mUserAspectRatioOrder = new SparseIntArray();
         mUserAspectRatioMap = getUserMinAspectRatioMapping();
+        mIgnoreActivityOrientationRequest = getValueFromDeviceConfig(
+                "ignore_activity_orientation_request", false);
+        mActivityTaskManager = activityTaskManager;
+        mBackupManager = backupManager;
     }
 
+    UserAspectRatioManager(@NonNull Context context, @NonNull IPackageManager pm,
+            @NonNull BackupManager backupManager) {
+        this(context, pm, ActivityTaskManager.getInstance(), backupManager);
+    }
     /**
      * Whether user aspect ratio settings is enabled for device.
      */
@@ -127,7 +142,7 @@ public class UserAspectRatioManager {
             return appDefault;
         }
 
-        return isCurrentSelectionFromManufacturerOverride(packageName, userId, aspectRatio)
+        return isUnsetAndRequiresFullscreenOverride(packageName, userId, aspectRatio)
                 ? getUserMinAspectRatioEntry(USER_MIN_ASPECT_RATIO_FULLSCREEN, packageName, userId)
                 : mUserAspectRatioMap.getOrDefault(aspectRatio, appDefault);
     }
@@ -139,7 +154,7 @@ public class UserAspectRatioManager {
     public CharSequence getAccessibleEntry(@PackageManager.UserMinAspectRatio int aspectRatio,
             @NonNull String packageName) {
         final int userId = mContext.getUserId();
-        return isCurrentSelectionFromManufacturerOverride(packageName, userId, aspectRatio)
+        return isUnsetAndRequiresFullscreenOverride(packageName, userId, aspectRatio)
                 ? getAccessibleEntry(USER_MIN_ASPECT_RATIO_FULLSCREEN, packageName)
                 : mUserAspectRatioA11yMap.getOrDefault(aspectRatio,
                         getUserMinAspectRatioEntry(aspectRatio, packageName, userId));
@@ -182,6 +197,10 @@ public class UserAspectRatioManager {
     public void setUserMinAspectRatio(@NonNull String packageName, int uid,
             @PackageManager.UserMinAspectRatio int aspectRatio) throws RemoteException {
         mIPm.setUserMinAspectRatio(packageName, uid, aspectRatio);
+
+        if (Flags.backupAndRestoreForUserAspectRatioSettings()) {
+            mBackupManager.dataChanged();
+        }
     }
 
     /**
@@ -203,7 +222,7 @@ public class UserAspectRatioManager {
             @PackageManager.UserMinAspectRatio int userOverride) {
         return (userOverride != USER_MIN_ASPECT_RATIO_UNSET
                     && userOverride != USER_MIN_ASPECT_RATIO_APP_DEFAULT)
-                || isCurrentSelectionFromManufacturerOverride(app.packageName, getUserId(app.uid),
+                || isUnsetAndRequiresFullscreenOverride(app.packageName, getUserId(app.uid),
                     userOverride);
     }
 
@@ -224,15 +243,23 @@ public class UserAspectRatioManager {
     /**
      * Whether the device manufacturer has overridden app's orientation to
      * {@link android.content.pm.ActivityInfo#SCREEN_ORIENTATION_USER} to force app to fullscreen
-     * and app has not opted-out from the treatment
+     * or app is universal resizeable, and app has not opted-out from the treatment
      */
     boolean isOverrideToFullscreenEnabled(String pkgName, int userId) {
-        Boolean appAllowsOrientationOverride = readComponentProperty(mContext.getPackageManager(),
-                pkgName, PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE);
-        return mIsUserMinAspectRatioAppDefaultFlagEnabled
-                && hasAspectRatioOption(USER_MIN_ASPECT_RATIO_FULLSCREEN, pkgName)
-                && !FALSE.equals(appAllowsOrientationOverride)
-                && isFullscreenCompatChangeEnabled(pkgName, userId);
+        try {
+            Boolean appAllowsOrientationOverride = readComponentProperty(
+                    mContext.getPackageManager(), pkgName,
+                    PROPERTY_COMPAT_ALLOW_ORIENTATION_OVERRIDE);
+            final ApplicationInfo info = mIPm.getApplicationInfo(pkgName, 0 /* flags */, userId);
+            return hasAspectRatioOption(USER_MIN_ASPECT_RATIO_FULLSCREEN, pkgName)
+                    && !FALSE.equals(appAllowsOrientationOverride)
+                    && (isFullscreenCompatChangeEnabled(pkgName, userId)
+                        || (info != null && mActivityTaskManager.canBeUniversalResizeable(info)));
+        } catch (RemoteException e) {
+            Log.e("UserAspectRatioManager", "Could not access application info for "
+                    + pkgName + ":\n" + e);
+            return false;
+        }
     }
 
     boolean isFullscreenCompatChangeEnabled(String pkgName, int userId) {
@@ -240,7 +267,11 @@ public class UserAspectRatioManager {
                 OVERRIDE_ANY_ORIENTATION_TO_USER, pkgName, UserHandle.of(userId));
     }
 
-    private boolean isCurrentSelectionFromManufacturerOverride(String pkgName, int userId,
+    /**
+     * Whether the aspect ratio is unset and we desire to interpret it as fullscreen rather than
+     * app default because of manufacturer override or because the app is universal resizeable
+     */
+    private boolean isUnsetAndRequiresFullscreenOverride(String pkgName, int userId,
             @PackageManager.UserMinAspectRatio int aspectRatio) {
         return aspectRatio == USER_MIN_ASPECT_RATIO_UNSET
                 && isOverrideToFullscreenEnabled(pkgName, userId);
@@ -298,15 +329,13 @@ public class UserAspectRatioManager {
             throw new RuntimeException("config_userAspectRatioOverrideValues options must have"
                     + " USER_MIN_ASPECT_RATIO_UNSET value");
         }
-        if (mIsUserMinAspectRatioAppDefaultFlagEnabled) {
-            userMinAspectRatioMap.put(USER_MIN_ASPECT_RATIO_APP_DEFAULT,
-                    userMinAspectRatioMap.get(USER_MIN_ASPECT_RATIO_UNSET));
-            mUserAspectRatioOrder.put(USER_MIN_ASPECT_RATIO_APP_DEFAULT,
-                    mUserAspectRatioOrder.get(USER_MIN_ASPECT_RATIO_UNSET));
-            if (mUserAspectRatioA11yMap.containsKey(USER_MIN_ASPECT_RATIO_UNSET)) {
-                mUserAspectRatioA11yMap.put(USER_MIN_ASPECT_RATIO_APP_DEFAULT,
-                        mUserAspectRatioA11yMap.get(USER_MIN_ASPECT_RATIO_UNSET));
-            }
+        userMinAspectRatioMap.put(USER_MIN_ASPECT_RATIO_APP_DEFAULT,
+                userMinAspectRatioMap.get(USER_MIN_ASPECT_RATIO_UNSET));
+        mUserAspectRatioOrder.put(USER_MIN_ASPECT_RATIO_APP_DEFAULT,
+                mUserAspectRatioOrder.get(USER_MIN_ASPECT_RATIO_UNSET));
+        if (mUserAspectRatioA11yMap.containsKey(USER_MIN_ASPECT_RATIO_UNSET)) {
+            mUserAspectRatioA11yMap.put(USER_MIN_ASPECT_RATIO_APP_DEFAULT,
+                    mUserAspectRatioA11yMap.get(USER_MIN_ASPECT_RATIO_UNSET));
         }
         return userMinAspectRatioMap;
     }

@@ -31,7 +31,6 @@ import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
-import com.android.settings.flags.Flags;
 import com.android.settingslib.bluetooth.BluetoothUtils;
 import com.android.settingslib.bluetooth.CachedBluetoothDevice;
 import com.android.settingslib.core.lifecycle.Lifecycle;
@@ -54,9 +53,6 @@ public class GeneralBluetoothDetailsHeaderController extends BluetoothDetailsCon
 
     @Override
     public boolean isAvailable() {
-        if (!Flags.enableBluetoothDeviceDetailsPolish()) {
-            return false;
-        }
         boolean hasLeAudio =
                 mCachedDevice.getUiAccessibleProfiles().stream()
                         .anyMatch(profile -> profile.getProfileId() == BluetoothProfile.LE_AUDIO);
@@ -89,15 +85,19 @@ public class GeneralBluetoothDetailsHeaderController extends BluetoothDetailsCon
         if (summary != null) {
             summary.setText(mCachedDevice.getConnectionSummary());
         }
-        ImageButton renameButton = mLayoutPreference.findViewById(R.id.rename_button);
-        renameButton.setVisibility(View.VISIBLE);
-        renameButton.setOnClickListener(
-                view -> {
-                    RemoteDeviceNameDialogFragment.newInstance(mCachedDevice)
-                            .show(
-                                    mFragment.getFragmentManager(),
-                                    RemoteDeviceNameDialogFragment.TAG);
-                });
+        boolean isTempBond = com.android.settingslib.flags.Flags.enableTemporaryBondDevicesUi()
+                && BluetoothUtils.isTemporaryBondDevice(mCachedDevice.getDevice());
+        if (!isTempBond) {
+            ImageButton renameButton = mLayoutPreference.findViewById(R.id.rename_button);
+            renameButton.setVisibility(View.VISIBLE);
+            renameButton.setOnClickListener(
+                    view -> {
+                        RemoteDeviceNameDialogFragment.newInstance(mCachedDevice)
+                                .show(
+                                        mFragment.getFragmentManager(),
+                                        RemoteDeviceNameDialogFragment.TAG);
+                    });
+        }
     }
 
     @Override

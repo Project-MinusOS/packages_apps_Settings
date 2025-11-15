@@ -19,15 +19,20 @@ import static org.mockito.Mockito.mock;
 
 import android.content.Context;
 
-import com.android.settings.accessibility.AccessibilityMetricsFeatureProvider;
+import com.android.settings.accessibility.AccessibilityDisabilitySupportFeatureProvider;
+import com.android.settings.accessibility.AccessibilityFeedbackFeatureProvider;
+import com.android.settings.accessibility.AccessibilityPageIdFeatureProvider;
 import com.android.settings.accessibility.AccessibilitySearchFeatureProvider;
 import com.android.settings.accounts.AccountFeatureProvider;
 import com.android.settings.applications.ApplicationFeatureProvider;
+import com.android.settings.biometrics.BiometricsFeatureProvider;
 import com.android.settings.biometrics.face.FaceFeatureProvider;
 import com.android.settings.biometrics.fingerprint.FingerprintFeatureProvider;
 import com.android.settings.bluetooth.BluetoothFeatureProvider;
+import com.android.settings.connecteddevice.audiosharing.AudioSharingFeatureProvider;
 import com.android.settings.connecteddevice.fastpair.FastPairFeatureProvider;
 import com.android.settings.connecteddevice.stylus.StylusFeatureProvider;
+import com.android.settings.connecteddevice.threadnetwork.ThreadNetworkFeatureProvider;
 import com.android.settings.dashboard.DashboardFeatureProvider;
 import com.android.settings.dashboard.suggestions.SuggestionFeatureProvider;
 import com.android.settings.display.DisplayFeatureProvider;
@@ -80,6 +85,7 @@ public class FakeFeatureFactory extends FeatureFactory {
     public final UserFeatureProvider userFeatureProvider;
     public final AccountFeatureProvider mAccountFeatureProvider;
     public final BluetoothFeatureProvider mBluetoothFeatureProvider;
+    public final BiometricsFeatureProvider mBiometricsFeatureProvider;
     public final FaceFeatureProvider mFaceFeatureProvider;
     public final FingerprintFeatureProvider mFingerprintFeatureProvider;
 
@@ -91,16 +97,21 @@ public class FakeFeatureFactory extends FeatureFactory {
     public WifiTrackerLibProvider wifiTrackerLibProvider;
     public SecuritySettingsFeatureProvider securitySettingsFeatureProvider;
     public AccessibilitySearchFeatureProvider mAccessibilitySearchFeatureProvider;
-    public AccessibilityMetricsFeatureProvider mAccessibilityMetricsFeatureProvider;
+    public AccessibilityPageIdFeatureProvider mAccessibilityPageIdFeatureProvider;
     public AdvancedVpnFeatureProvider mAdvancedVpnFeatureProvider;
     public WifiFeatureProvider mWifiFeatureProvider;
     public KeyboardSettingsFeatureProvider mKeyboardSettingsFeatureProvider;
     public StylusFeatureProvider mStylusFeatureProvider;
+    public ThreadNetworkFeatureProvider mThreadNetworkFeatureProvider;
     public OnboardingFeatureProvider mOnboardingFeatureProvider;
     public FastPairFeatureProvider mFastPairFeatureProvider;
     public PrivateSpaceLoginFeatureProvider mPrivateSpaceLoginFeatureProvider;
     public DisplayFeatureProvider mDisplayFeatureProvider;
     public SyncAcrossDevicesFeatureProvider mSyncAcrossDevicesFeatureProvider;
+    public AccessibilityFeedbackFeatureProvider mAccessibilityFeedbackFeatureProvider;
+    public AudioSharingFeatureProvider mAudioSharingFeatureProvider;
+    public AccessibilityDisabilitySupportFeatureProvider
+            mAccessibilityDisabilitySupportFeatureProvider;
 
     /**
      * Call this in {@code @Before} method of the test class to use fake factory.
@@ -135,21 +146,24 @@ public class FakeFeatureFactory extends FeatureFactory {
         mContextualCardFeatureProvider = mock(ContextualCardFeatureProvider.class);
         panelFeatureProvider = mock(PanelFeatureProvider.class);
         mBluetoothFeatureProvider = mock(BluetoothFeatureProvider.class);
+        mBiometricsFeatureProvider = mock(BiometricsFeatureProvider.class);
         mFaceFeatureProvider = mock(FaceFeatureProvider.class);
         mFingerprintFeatureProvider = mock(FingerprintFeatureProvider.class);
         wifiTrackerLibProvider = mock(WifiTrackerLibProvider.class);
         securitySettingsFeatureProvider = mock(SecuritySettingsFeatureProvider.class);
         mAccessibilitySearchFeatureProvider = mock(AccessibilitySearchFeatureProvider.class);
-        mAccessibilityMetricsFeatureProvider = mock(AccessibilityMetricsFeatureProvider.class);
+        mAccessibilityPageIdFeatureProvider = mock(AccessibilityPageIdFeatureProvider.class);
         mAdvancedVpnFeatureProvider = mock(AdvancedVpnFeatureProvider.class);
         mWifiFeatureProvider = mock(WifiFeatureProvider.class);
         mKeyboardSettingsFeatureProvider = mock(KeyboardSettingsFeatureProvider.class);
         mStylusFeatureProvider = mock(StylusFeatureProvider.class);
+        mThreadNetworkFeatureProvider = mock(ThreadNetworkFeatureProvider.class);
         mOnboardingFeatureProvider = mock(OnboardingFeatureProvider.class);
         mFastPairFeatureProvider = mock(FastPairFeatureProvider.class);
         mPrivateSpaceLoginFeatureProvider = mock(PrivateSpaceLoginFeatureProvider.class);
         mDisplayFeatureProvider = mock(DisplayFeatureProvider.class);
         mSyncAcrossDevicesFeatureProvider = mock(SyncAcrossDevicesFeatureProvider.class);
+        mAudioSharingFeatureProvider = mock(AudioSharingFeatureProvider.class);
     }
 
     @Override
@@ -259,6 +273,11 @@ public class FakeFeatureFactory extends FeatureFactory {
     }
 
     @Override
+    public BiometricsFeatureProvider getBiometricsFeatureProvider() {
+        return mBiometricsFeatureProvider;
+    }
+
+    @Override
     public FaceFeatureProvider getFaceFeatureProvider() {
         return mFaceFeatureProvider;
     }
@@ -284,8 +303,8 @@ public class FakeFeatureFactory extends FeatureFactory {
     }
 
     @Override
-    public AccessibilityMetricsFeatureProvider getAccessibilityMetricsFeatureProvider() {
-        return mAccessibilityMetricsFeatureProvider;
+    public AccessibilityPageIdFeatureProvider getAccessibilityPageIdFeatureProvider() {
+        return mAccessibilityPageIdFeatureProvider;
     }
 
     @Override
@@ -306,6 +325,11 @@ public class FakeFeatureFactory extends FeatureFactory {
     @Override
     public StylusFeatureProvider getStylusFeatureProvider() {
         return mStylusFeatureProvider;
+    }
+
+    @Override
+    public ThreadNetworkFeatureProvider getThreadNetworkFeatureProvider() {
+        return mThreadNetworkFeatureProvider;
     }
 
     @Override
@@ -332,5 +356,20 @@ public class FakeFeatureFactory extends FeatureFactory {
     public SyncAcrossDevicesFeatureProvider getSyncAcrossDevicesFeatureProvider() {
         return mSyncAcrossDevicesFeatureProvider;
     }
-}
 
+    @Override
+    public AccessibilityFeedbackFeatureProvider getAccessibilityFeedbackFeatureProvider() {
+        return mAccessibilityFeedbackFeatureProvider;
+    }
+
+    @Override
+    public AudioSharingFeatureProvider getAudioSharingFeatureProvider() {
+        return mAudioSharingFeatureProvider;
+    }
+
+    @Override
+    public AccessibilityDisabilitySupportFeatureProvider
+            getAccessibilityDisabilitySupportFeatureProvider() {
+        return mAccessibilityDisabilitySupportFeatureProvider;
+    }
+}

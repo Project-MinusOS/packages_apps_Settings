@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.outlined.DataUsage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,7 +41,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,14 +53,13 @@ import com.android.settings.network.telephony.MobileDataRepository
 import com.android.settings.network.telephony.SimRepository
 import com.android.settings.network.telephony.requireSubscriptionManager
 import com.android.settings.spa.network.PrimarySimRepository.PrimarySimInfo
-import com.android.settings.spa.search.SearchablePage
 import com.android.settings.wifi.WifiPickerTrackerHelper
 import com.android.settingslib.spa.framework.common.SettingsEntryBuilder
 import com.android.settingslib.spa.framework.common.SettingsPageProvider
 import com.android.settingslib.spa.framework.common.createSettingsPage
 import com.android.settingslib.spa.framework.compose.navigator
-import com.android.settingslib.spa.framework.compose.rememberContext
-import com.android.settingslib.spa.framework.util.collectLatestWithLifecycle
+import com.android.settingslib.spa.search.SearchablePage
+import com.android.settingslib.spa.search.SearchablePage.SearchItem
 import com.android.settingslib.spa.widget.preference.Preference
 import com.android.settingslib.spa.widget.preference.PreferenceModel
 import com.android.settingslib.spa.widget.scaffold.RegularScaffold
@@ -110,50 +109,47 @@ open class NetworkCellularGroupProvider : SettingsPageProvider, SearchablePage {
         var textsSelectedId = rememberSaveable {
             mutableIntStateOf(SubscriptionManager.INVALID_SUBSCRIPTION_ID)
         }
-        var mobileDataSelectedId = rememberSaveable {
-            mutableIntStateOf(SubscriptionManager.INVALID_SUBSCRIPTION_ID)
-        }
+        val mobileDataSelectedId = rememberSaveable { mutableStateOf<Int?>(null) }
         var nonDdsRemember = rememberSaveable {
             mutableIntStateOf(SubscriptionManager.INVALID_SUBSCRIPTION_ID)
-        }
-        var showMobileDataSection = rememberSaveable {
-            mutableStateOf(false)
         }
         val subscriptionViewModel = viewModel<SubscriptionInfoListViewModel>()
 
         CollectAirplaneModeAndFinishIfOn()
 
-        remember {
-            allOfFlows(context, subscriptionViewModel.selectableSubscriptionInfoListFlow)
-        }.collectLatestWithLifecycle(LocalLifecycleOwner.current) {
-            callsSelectedId.intValue = defaultVoiceSubId
-            textsSelectedId.intValue = defaultSmsSubId
-            mobileDataSelectedId.intValue = defaultDataSubId
-            nonDdsRemember.intValue = nonDds
+        LaunchedEffect(Unit) {
+            allOfFlows(context, subscriptionViewModel.selectableSubscriptionInfoListFlow).collect {
+                callsSelectedId.intValue = defaultVoiceSubId
+                textsSelectedId.intValue = defaultSmsSubId
+                mobileDataSelectedId.value = defaultDataSubId
+                nonDdsRemember.intValue = nonDds
+            }
         }
 
         val selectableSubscriptionInfoList by subscriptionViewModel
                 .selectableSubscriptionInfoListFlow
                 .collectAsStateWithLifecycle(initialValue = emptyList())
-        showMobileDataSection.value = selectableSubscriptionInfoList
-                .filter { subInfo -> subInfo.simSlotIndex > -1 }
-                .size > 0
-        val stringSims = stringResource(R.string.provider_network_settings_title)
-        RegularScaffold(title = stringSims) {
+
+        RegularScaffold(title = stringResource(R.string.provider_network_settings_title)) {
             SimsSection(selectableSubscriptionInfoList)
-            if(showMobileDataSection.value) {
-                MobileDataSectionImpl(
-                    mobileDataSelectedId,
-                    nonDdsRemember,
+            val mobileDataSelectedIdValue = mobileDataSelectedId.value
+            // Avoid draw mobile data UI before data ready to reduce flaky
+            if (mobileDataSelectedIdValue != null) {
+                val showMobileDataSection =
+                    selectableSubscriptionInfoList.any { subInfo -> subInfo.simSlotIndex > -1 }
+                if (showMobileDataSection) {
+                    MobileDataSectionImpl(mobileDataSelectedIdValue, nonDdsRemember.intValue)
+                }
+
+                PrimarySimSectionImpl(
+                    subscriptionViewModel.selectableSubscriptionInfoListFlow,
+                    callsSelectedId,
+                    textsSelectedId,
+                    remember(mobileDataSelectedIdValue) {
+                        mutableIntStateOf(mobileDataSelectedIdValue)
+                    },
                 )
             }
-
-            PrimarySimSectionImpl(
-                subscriptionViewModel.selectableSubscriptionInfoListFlow,
-                callsSelectedId,
-                textsSelectedId,
-                mobileDataSelectedId,
-            )
 
             OtherSection()
         }
@@ -199,12 +195,13 @@ open class NetworkCellularGroupProvider : SettingsPageProvider, SearchablePage {
     override fun getPageTitleForSearch(context: Context): String =
         context.getString(R.string.provider_network_settings_title)
 
-    override fun getSearchableTitles(context: Context): List<String> {
+    override fun getSearchItems(context: Context): List<SearchItem> {
         if (!isPageSearchable(context)) return emptyList()
+        val activeSubscriptionCount =
+            context.requireSubscriptionManager().activeSubscriptionInfoCount
         return buildList {
-            if (context.requireSubscriptionManager().activeSubscriptionInfoCount > 0) {
-                add(context.getString(R.string.mobile_data_settings_title))
-            }
+            if (activeSubscriptionCount > 0) add(getMobileDataSearchItem(context))
+            if (activeSubscriptionCount >= 2) add(getAutomaticDataSwitchingSearchItem(context))
         }
     }
 
@@ -217,49 +214,11 @@ open class NetworkCellularGroupProvider : SettingsPageProvider, SearchablePage {
 }
 
 @Composable
-fun MobileDataSectionImpl(
-    mobileDataSelectedId: MutableIntState,
-    nonDds: MutableIntState,
-) {
-    val context = LocalContext.current
-    val localLifecycleOwner = LocalLifecycleOwner.current
-    val mobileDataRepository = rememberContext(::MobileDataRepository)
-
+fun MobileDataSectionImpl(mobileDataSelectedId: Int, nonDds: Int) {
     Category(title = stringResource(id = R.string.mobile_data_settings_title)) {
-        val isAutoDataEnabled by remember(nonDds.intValue) {
-            mobileDataRepository.isMobileDataPolicyEnabledFlow(
-                subId = nonDds.intValue,
-                policy = TelephonyManager.MOBILE_DATA_POLICY_AUTO_DATA_SWITCH
-            )
-        }.collectAsStateWithLifecycle(initialValue = null)
+        MobileDataSwitchPreference(subId = mobileDataSelectedId)
 
-        val mobileDataStateChanged by remember(mobileDataSelectedId.intValue) {
-            mobileDataRepository.isMobileDataEnabledFlow(mobileDataSelectedId.intValue)
-        }.collectAsStateWithLifecycle(initialValue = false)
-        val coroutineScope = rememberCoroutineScope()
-
-        MobileDataSwitchingPreference(
-            isMobileDataEnabled = { mobileDataStateChanged },
-            setMobileDataEnabled = { newEnabled ->
-                coroutineScope.launch {
-                    setMobileData(
-                        context,
-                        context.getSystemService(SubscriptionManager::class.java),
-                        getWifiPickerTrackerHelper(context, localLifecycleOwner),
-                        mobileDataSelectedId.intValue,
-                        newEnabled
-                    )
-                }
-           },
-        )
-        if (nonDds.intValue != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
-            AutomaticDataSwitchingPreference(
-                isAutoDataEnabled = { isAutoDataEnabled },
-                setAutoDataEnabled = { newEnabled ->
-                    mobileDataRepository.setAutoDataSwitch(nonDds.intValue, newEnabled)
-                },
-            )
-        }
+        AutomaticDataSwitchingPreference(nonDds)
     }
 }
 
@@ -328,9 +287,6 @@ fun PrimarySimSectionImpl(
     mobileDataSelectedId: MutableIntState,
 ) {
     val context = LocalContext.current
-    val localLifecycleOwner = LocalLifecycleOwner.current
-    val wifiPickerTrackerHelper = getWifiPickerTrackerHelper(context, localLifecycleOwner)
-
     val primarySimInfo = remember(subscriptionInfoListFlow) {
         subscriptionInfoListFlow
             .map { subscriptionInfoList ->
@@ -346,7 +302,7 @@ fun PrimarySimSectionImpl(
             callsSelectedId,
             textsSelectedId,
             mobileDataSelectedId,
-            wifiPickerTrackerHelper
+            rememberWifiPickerTrackerHelper()
         )
     }
 }
@@ -354,22 +310,21 @@ fun PrimarySimSectionImpl(
 @Composable
 fun CollectAirplaneModeAndFinishIfOn() {
     val context = LocalContext.current
-    context.settingsGlobalBooleanFlow(Settings.Global.AIRPLANE_MODE_ON)
-        .collectLatestWithLifecycle(LocalLifecycleOwner.current) { isAirplaneModeOn ->
+    LaunchedEffect(Unit) {
+        context.settingsGlobalBooleanFlow(Settings.Global.AIRPLANE_MODE_ON).collect {
+            isAirplaneModeOn ->
             if (isAirplaneModeOn) {
                 context.getActivity()?.finish()
             }
         }
+    }
 }
 
-private fun getWifiPickerTrackerHelper(
-    context: Context,
-    lifecycleOwner: LifecycleOwner
-): WifiPickerTrackerHelper {
-    return WifiPickerTrackerHelper(
-        LifecycleRegistry(lifecycleOwner), context,
-        null /* WifiPickerTrackerCallback */
-    )
+@Composable
+fun rememberWifiPickerTrackerHelper(): WifiPickerTrackerHelper {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    return remember { WifiPickerTrackerHelper(LifecycleRegistry(lifecycleOwner), context, null) }
 }
 
 private fun Context.defaultVoiceSubscriptionFlow(): Flow<Int> =

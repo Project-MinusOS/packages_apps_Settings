@@ -21,18 +21,18 @@ import static com.android.settings.core.BasePreferenceController.UNSUPPORTED_ON_
 
 import static com.google.common.truth.Truth.assertThat;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
-import android.platform.test.flag.junit.SetFlagsRule;
 import android.safetycenter.SafetyCenterManager;
 import android.telephony.TelephonyManager;
 
@@ -43,21 +43,15 @@ import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
-import com.android.internal.telephony.flags.Flags;
-
 import org.junit.Assume;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 @RunWith(AndroidJUnit4.class)
 public final class CellularSecurityPreferenceControllerTest {
-    @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
-
     @Mock
     private TelephonyManager mTelephonyManager;
     private Preference mPreference;
@@ -66,6 +60,7 @@ public final class CellularSecurityPreferenceControllerTest {
     private static final String PREF_KEY = "cellular_security_pref_controller_test";
     private Context mContext;
     private CellularSecurityPreferenceController mController;
+    private SafetyCenterManager mSafetyCenterManager;
 
     @Before
     public void setUp() {
@@ -73,8 +68,8 @@ public final class CellularSecurityPreferenceControllerTest {
 
         // Tests must be skipped if these conditions aren't met as they cannot be mocked
         Assume.assumeTrue(Build.VERSION.SDK_INT > Build.VERSION_CODES.TIRAMISU);
-        SafetyCenterManager mSafetyCenterManager = InstrumentationRegistry.getInstrumentation()
-                .getContext().getSystemService(SafetyCenterManager.class);
+        mSafetyCenterManager = InstrumentationRegistry.getInstrumentation().getContext()
+                .getSystemService(SafetyCenterManager.class);
         Assume.assumeTrue(mSafetyCenterManager != null);
         Assume.assumeTrue(mSafetyCenterManager.isSafetyCenterEnabled());
 
@@ -83,19 +78,79 @@ public final class CellularSecurityPreferenceControllerTest {
 
         doNothing().when(mContext).startActivity(any(Intent.class));
 
-        mController = new CellularSecurityPreferenceController(mContext, PREF_KEY);
+        initControllerAndPreference();
+    }
 
-        mPreference = spy(new Preference(mContext));
-        mPreference.setKey(PREF_KEY);
-        mPreferenceScreen = new PreferenceManager(mContext).createPreferenceScreen(mContext);
-        mPreferenceScreen.addPreference(mPreference);
+    @Test
+    public void handlePreferenceTreeClick_SafetyCenterSupported_RadioInterfaceNotSupported() {
+        Assume.assumeTrue(mSafetyCenterManager.isSafetyCenterEnabled());
+        doReturn(false).when(mTelephonyManager).isRadioInterfaceCapabilitySupported(any());
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertTrue(result);
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_SafetyCenterNotSupported_RadioInterfaceSupported() {
+        Assume.assumeFalse(mSafetyCenterManager.isSafetyCenterEnabled());
+        doReturn(true).when(mTelephonyManager).isRadioInterfaceCapabilitySupported(any());
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertTrue(result);
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_SafetyCenterSupported_RadioInterfaceSupported() {
+        Assume.assumeTrue(mSafetyCenterManager.isSafetyCenterEnabled());
+        doReturn(true).when(mTelephonyManager).isRadioInterfaceCapabilitySupported(any());
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertTrue(result);
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_preferenceKeyNotMatch() {
+        mPreference.setKey("PREF_KEY");
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertFalse(result);
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_SafetyCenterManagerIsNull() {
+        when(mContext.getSystemService(SafetyCenterManager.class)).thenReturn(null);
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertFalse(result);
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_telephonyManagerIsNull() {
+        when(mContext.getSystemService(TelephonyManager.class)).thenReturn(null);
+        initControllerAndPreference();
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertFalse(result);
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_SafetyCenterNotSupported_RadioInterfaceNotSupported() {
+        Assume.assumeFalse(mSafetyCenterManager.isSafetyCenterEnabled());
+        doReturn(false).when(mTelephonyManager).isRadioInterfaceCapabilitySupported(any());
+
+        boolean result = mController.handlePreferenceTreeClick(mPreference);
+
+        assertFalse(result);
     }
 
     @Test
     public void getAvailabilityStatus_hardwareSupported_shouldReturnTrue() {
-        // Enable telephony API flags for testing
-        enableFlags(true);
-
         // Hardware support is enabled
         doReturn(true).when(mTelephonyManager).isNullCipherNotificationsEnabled();
         doReturn(true).when(mTelephonyManager)
@@ -122,9 +177,6 @@ public final class CellularSecurityPreferenceControllerTest {
 
     @Test
     public void getAvailabilityStatus_noHardwareSupport_shouldReturnFalse() {
-        // Enable telephony API flags for testing
-        enableFlags(true);
-
         // Hardware support is disabled
         doThrow(new UnsupportedOperationException("test")).when(mTelephonyManager)
               .isNullCipherNotificationsEnabled();
@@ -136,44 +188,12 @@ public final class CellularSecurityPreferenceControllerTest {
         assertThat(mController.getAvailabilityStatus()).isEqualTo(UNSUPPORTED_ON_DEVICE);
     }
 
-    @Test
-    public void getAvailabilityStatus_flagsDisabled_shouldReturnFalse() {
-        // Both flags disabled
-        enableFlags(false);
-        assertThat(mController.getAvailabilityStatus()).isEqualTo(UNSUPPORTED_ON_DEVICE);
+    private void initControllerAndPreference() {
+        mController = new CellularSecurityPreferenceController(mContext, PREF_KEY);
 
-        // One flag is disabled
-        mSetFlagsRule.disableFlags(
-                Flags.FLAG_ENABLE_IDENTIFIER_DISCLOSURE_TRANSPARENCY_UNSOL_EVENTS);
-        assertThat(mController.getAvailabilityStatus()).isEqualTo(UNSUPPORTED_ON_DEVICE);
-    }
-
-    @Test
-    public void handlePreferenceTreeClick_safetyCenterSupported_shouldRedirectToSafetyCenter() {
-        final ArgumentCaptor<Intent> intentCaptor = ArgumentCaptor.forClass(Intent.class);
-
-        boolean prefHandled = mController.handlePreferenceTreeClick(mPreference);
-
-        assertThat(prefHandled).isTrue();
-        verify(mContext).startActivity(intentCaptor.capture());
-        assertThat(intentCaptor.getValue().getAction()).isEqualTo(Intent.ACTION_SAFETY_CENTER);
-    }
-
-    private void enableFlags(boolean enabled) {
-        if (enabled) {
-            mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_MODEM_CIPHER_TRANSPARENCY_UNSOL_EVENTS);
-            mSetFlagsRule.enableFlags(
-                    Flags.FLAG_ENABLE_IDENTIFIER_DISCLOSURE_TRANSPARENCY_UNSOL_EVENTS);
-            mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_MODEM_CIPHER_TRANSPARENCY);
-            mSetFlagsRule.enableFlags(
-                    Flags.FLAG_ENABLE_IDENTIFIER_DISCLOSURE_TRANSPARENCY);
-        } else {
-            mSetFlagsRule.disableFlags(Flags.FLAG_ENABLE_MODEM_CIPHER_TRANSPARENCY_UNSOL_EVENTS);
-            mSetFlagsRule.disableFlags(
-                    Flags.FLAG_ENABLE_IDENTIFIER_DISCLOSURE_TRANSPARENCY_UNSOL_EVENTS);
-            mSetFlagsRule.disableFlags(Flags.FLAG_ENABLE_MODEM_CIPHER_TRANSPARENCY);
-            mSetFlagsRule.disableFlags(
-                    Flags.FLAG_ENABLE_IDENTIFIER_DISCLOSURE_TRANSPARENCY);
-        }
+        mPreference = spy(new Preference(mContext));
+        mPreference.setKey(PREF_KEY);
+        mPreferenceScreen = new PreferenceManager(mContext).createPreferenceScreen(mContext);
+        mPreferenceScreen.addPreference(mPreference);
     }
 }

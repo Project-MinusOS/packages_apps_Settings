@@ -17,6 +17,7 @@ package com.android.settings.connecteddevice;
 
 import android.app.settings.SettingsEnums;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.util.Log;
@@ -34,17 +35,23 @@ import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.slices.SlicePreferenceController;
 import com.android.settingslib.bluetooth.BluetoothUtils;
 import com.android.settingslib.bluetooth.HearingAidStatsLogUtils;
+import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
 import com.android.settingslib.search.SearchIndexable;
 
 @SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
 public class ConnectedDeviceDashboardFragment extends DashboardFragment {
 
     private static final String TAG = "ConnectedDeviceFrag";
-    private static final boolean DEBUG = Log.isLoggable(TAG, Log.DEBUG);
-    private static final String SLICE_ACTION = "com.android.settings.SEARCH_RESULT_TRAMPOLINE";
-
+    private static final String SETTINGS_SEARCH_ACTION =
+            "com.android.settings.SEARCH_RESULT_TRAMPOLINE";
     @VisibleForTesting static final String KEY_CONNECTED_DEVICES = "connected_device_list";
     @VisibleForTesting static final String KEY_AVAILABLE_DEVICES = "available_device_list";
+
+    private static final String ENTRYPOINT_SYSUI = "bt_settings_entrypoint_sysui";
+    private static final String ENTRYPOINT_SETTINGS = "bt_settings_entrypoint_settings_click";
+    private static final String ENTRYPOINT_SETTINGS_SEARCH =
+            "bt_settings_entrypoint_settings_search";
+    private static final String ENTRYPOINT_OTHER = "bt_settings_entrypoint_other";
 
     @Override
     public int getMetricsCategory() {
@@ -71,16 +78,17 @@ public class ConnectedDeviceDashboardFragment extends DashboardFragment {
         super.onAttach(context);
         String callingAppPackageName =
                 ((SettingsActivity) getActivity()).getInitialCallingPackage();
-        String action = getIntent() != null ? getIntent().getAction() : "";
-        if (DEBUG) {
-            Log.d(
-                    TAG,
-                    "onAttach() calling package name is : "
-                            + callingAppPackageName
-                            + ", action : "
-                            + action);
-        }
-        if (BluetoothUtils.isAudioSharingEnabled()) {
+        Intent intent = getIntent();
+        String action = intent != null ? intent.getAction() : "";
+
+        Log.d(
+                TAG,
+                "onAttach() calling package name is : "
+                        + callingAppPackageName
+                        + ", action : "
+                        + action);
+
+        if (BluetoothUtils.isAudioSharingUIAvailable(context)) {
             use(AudioSharingDevicePreferenceController.class).init(this);
         }
         use(AvailableMediaDeviceGroupController.class).init(this);
@@ -91,11 +99,18 @@ public class ConnectedDeviceDashboardFragment extends DashboardFragment {
         use(DiscoverableFooterPreferenceController.class)
                 .setAlwaysDiscoverable(isAlwaysDiscoverable(callingAppPackageName, action));
 
+        logPageEntrypoint(context, callingAppPackageName, intent);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+
         // Show hearing devices survey if user is categorized as one of interested category
-        final String category = HearingAidStatsLogUtils.getUserCategory(context);
+        final String category = HearingAidStatsLogUtils.getUserCategory(getContext());
         if (category != null && !category.isEmpty()) {
             SurveyFeatureProvider provider =
-                    FeatureFactory.getFeatureFactory().getSurveyFeatureProvider(context);
+                    FeatureFactory.getFeatureFactory().getSurveyFeatureProvider(getContext());
             if (provider != null) {
                 provider.sendActivityIfAvailable(category);
             }
@@ -104,10 +119,47 @@ public class ConnectedDeviceDashboardFragment extends DashboardFragment {
 
     @VisibleForTesting
     boolean isAlwaysDiscoverable(String callingAppPackageName, String action) {
-        return TextUtils.equals(SLICE_ACTION, action)
+        return TextUtils.equals(SETTINGS_SEARCH_ACTION, action)
                 ? false
                 : TextUtils.equals(Utils.SETTINGS_PACKAGE_NAME, callingAppPackageName)
                         || TextUtils.equals(Utils.SYSTEMUI_PACKAGE_NAME, callingAppPackageName);
+    }
+
+    private void logPageEntrypoint(Context context, String callingAppPackageName, Intent intent) {
+        String action = intent != null ? intent.getAction() : "";
+        if (TextUtils.equals(Utils.SYSTEMUI_PACKAGE_NAME, callingAppPackageName)) {
+            mMetricsFeatureProvider.action(
+                    context,
+                    SettingsEnums.ACTION_OPEN_SETTINGS_CONNECTED_DEVICES,
+                    ENTRYPOINT_SYSUI);
+        } else if (TextUtils.equals(Utils.SETTINGS_PACKAGE_NAME, callingAppPackageName)
+                && TextUtils.equals(Intent.ACTION_MAIN, action)) {
+            String sourceCategory =
+                    intent != null
+                            ? Integer.toString(
+                                    getIntent()
+                                            .getIntExtra(
+                                                    MetricsFeatureProvider
+                                                            .EXTRA_SOURCE_METRICS_CATEGORY,
+                                                    SettingsEnums.PAGE_UNKNOWN))
+                            : "";
+            mMetricsFeatureProvider.action(
+                    context,
+                    SettingsEnums.ACTION_OPEN_SETTINGS_CONNECTED_DEVICES,
+                    ENTRYPOINT_SETTINGS + "_" + sourceCategory);
+        } else if (TextUtils.equals(Utils.SETTINGS_PACKAGE_NAME, callingAppPackageName)
+                && TextUtils.equals(SETTINGS_SEARCH_ACTION, action)) {
+            mMetricsFeatureProvider.action(
+                    context,
+                    SettingsEnums.ACTION_OPEN_SETTINGS_CONNECTED_DEVICES,
+                    ENTRYPOINT_SETTINGS_SEARCH);
+
+        } else {
+            mMetricsFeatureProvider.action(
+                    context,
+                    SettingsEnums.ACTION_OPEN_SETTINGS_CONNECTED_DEVICES,
+                    ENTRYPOINT_OTHER);
+        }
     }
 
     /** For Search. */

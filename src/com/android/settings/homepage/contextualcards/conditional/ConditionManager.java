@@ -153,7 +153,6 @@ public class ConditionManager {
                 new BackgroundDataConditionController(mAppContext, this /* manager */));
         mCardControllers.add(new BatterySaverConditionController(mAppContext, this /* manager */));
         mCardControllers.add(new CellularDataConditionController(mAppContext, this /* manager */));
-        mCardControllers.add(new DndConditionCardController(mAppContext, this /* manager */));
         mCardControllers.add(new HotspotConditionController(mAppContext, this /* manager */));
         mCardControllers.add(new NightDisplayConditionController(mAppContext, this /* manager */));
         mCardControllers.add(new RingerVibrateConditionController(mAppContext, this /* manager */));

@@ -38,7 +38,7 @@ import com.android.settings.R;
 import com.android.settings.Settings;
 import com.android.settings.SettingsActivity;
 import com.android.settings.SubSettings;
-import com.android.settings.biometrics.face.FaceEnrollIntroduction;
+import com.android.settings.biometrics.face.FaceEnrollActivityClassProvider;
 import com.android.settings.biometrics.face.FaceEnrollIntroductionInternal;
 import com.android.settings.biometrics.fingerprint.FingerprintEnrollActivityClassProvider;
 import com.android.settings.biometrics.fingerprint.FingerprintEnrollEnrolling;
@@ -52,6 +52,7 @@ import com.android.settings.privatespace.PrivateSpaceSetupActivity;
 import com.android.settings.privatespace.delete.PrivateSpaceDeleteActivity;
 import com.android.settings.remoteauth.RemoteAuthActivity;
 import com.android.settings.remoteauth.RemoteAuthActivityInternal;
+import com.android.settingslib.users.CreateUserActivity;
 
 import java.util.Collection;
 import java.util.HashSet;
@@ -254,15 +255,20 @@ public class ActivityEmbeddingRulesController {
                     .buildSearchIntent(mContext, SettingsEnums.SETTINGS_HOMEPAGE);
             addActivityFilter(activityFilters, searchIntent);
         }
+        final FaceEnrollActivityClassProvider faceClassProvider = FeatureFactory
+                .getFeatureFactory()
+                .getFaceFeatureProvider()
+                .getEnrollActivityClassProvider();
+        addActivityFilter(activityFilters, faceClassProvider.getNext());
         final FingerprintEnrollActivityClassProvider fpClassProvider = FeatureFactory
                 .getFeatureFactory()
                 .getFingerprintFeatureProvider()
-                .getEnrollActivityClassProvider();
+                .getEnrollActivityClassProvider(mContext);
         addActivityFilter(activityFilters, fpClassProvider.getDefault());
         addActivityFilter(activityFilters, fpClassProvider.getInternal());
+        addActivityFilter(activityFilters, fpClassProvider.getAddAnother());
         addActivityFilter(activityFilters, FingerprintEnrollEnrolling.class);
         addActivityFilter(activityFilters, FaceEnrollIntroductionInternal.class);
-        addActivityFilter(activityFilters, FaceEnrollIntroduction.class);
         addActivityFilter(activityFilters, RemoteAuthActivity.class);
         addActivityFilter(activityFilters, RemoteAuthActivityInternal.class);
         addActivityFilter(activityFilters, ChooseLockPattern.class);
@@ -272,6 +278,8 @@ public class ActivityEmbeddingRulesController {
         }
         String action = mContext.getString(R.string.config_avatar_picker_action);
         addActivityFilter(activityFilters, new Intent(action));
+        addActivityFilter(activityFilters, CreateUserActivity.class);
+
 
         ActivityRule activityRule = new ActivityRule.Builder(activityFilters).setAlwaysExpand(true)
                 .build();

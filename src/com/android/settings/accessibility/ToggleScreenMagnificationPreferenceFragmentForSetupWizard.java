@@ -25,9 +25,11 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.preference.PreferenceScreen;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.settings.R;
+import com.android.settingslib.widget.SettingsThemeHelper;
 
 import com.google.android.setupcompat.template.FooterBarMixin;
 import com.google.android.setupdesign.GlifPreferenceLayout;
@@ -58,6 +60,14 @@ public class ToggleScreenMagnificationPreferenceFragmentForSetupWizard
         }
 
         hidePreferenceSettingComponents();
+    }
+
+    @Override
+    protected RecyclerView.Adapter onCreateAdapter(PreferenceScreen preferenceScreen) {
+        if (SettingsThemeHelper.isExpressiveTheme(requireContext())) {
+            return new PreferenceAdapterInSuw(preferenceScreen);
+        }
+        return super.onCreateAdapter(preferenceScreen);
     }
 
     /**
@@ -110,5 +120,11 @@ public class ToggleScreenMagnificationPreferenceFragmentForSetupWizard
     public int getHelpResource() {
         // Hides help center in action bar and footer bar in SuW
         return 0;
+    }
+
+    @Override
+    public String getSurveyKey() {
+        // Hides survey options in SuW
+        return "";
     }
 }

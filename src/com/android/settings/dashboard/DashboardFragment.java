@@ -53,6 +53,7 @@ import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.core.lifecycle.Lifecycle;
 import com.android.settingslib.drawer.DashboardCategory;
 import com.android.settingslib.drawer.Tile;
+import com.android.settingslib.preference.PreferenceScreenCreator;
 import com.android.settingslib.search.Indexable;
 
 import java.util.ArrayList;
@@ -60,6 +61,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -98,7 +100,8 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
         mDashboardFeatureProvider =
                 FeatureFactory.getFeatureFactory().getDashboardFeatureProvider();
 
-        if (!isCatalystEnabled()) {
+        PreferenceScreenCreator preferenceScreenCreator = getPreferenceScreenCreator();
+        if (preferenceScreenCreator == null || !preferenceScreenCreator.hasCompleteHierarchy()) {
             // Load preference controllers from code
             final List<AbstractPreferenceController> controllersFromCode =
                     createPreferenceControllers(context);
@@ -249,6 +252,15 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
 
     @Override
     public boolean onPreferenceTreeClick(Preference preference) {
+        if (isCatalystEnabled()) {
+            Intent intent = preference.getIntent();
+            if (intent != null && preference.getContext().getPackageManager().queryIntentActivities(
+                    intent, 0).isEmpty()) {
+                Log.w(TAG, "No activity to start for " + intent);
+                return true;
+            }
+        }
+
         final Collection<List<AbstractPreferenceController>> controllers =
                 mPreferenceControllers.values();
         for (List<AbstractPreferenceController> controllerList : controllers) {
@@ -274,11 +286,6 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
             }
             mListeningToCategoryChange = false;
         }
-    }
-
-    @Override
-    protected final int getPreferenceScreenResId(@NonNull Context context) {
-        return getPreferenceScreenResId();
     }
 
     @Override
@@ -319,6 +326,13 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
         }
 
         return null;
+    }
+
+    /** Returns grouped controllers of input type T. */
+    protected <T extends AbstractPreferenceController> List<AbstractPreferenceController> useGroup(
+            Class<T> clazz) {
+        return mPreferenceControllers.values().stream().flatMap(Collection::stream).filter(
+                controller -> clazz.isInstance(controller)).toList();
     }
 
     /** Returns all controllers of type T. */
@@ -369,16 +383,19 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
      * Displays resource based tiles.
      */
     private void displayResourceTiles() {
-        final int resId = getPreferenceScreenResId();
-        if (resId <= 0) {
-            return;
-        }
         PreferenceScreen screen;
-        if (isCatalystEnabled()) {
+        PreferenceScreenCreator preferenceScreenCreator = getPreferenceScreenCreator();
+        if (preferenceScreenCreator != null) {
             screen = createPreferenceScreen();
+            if (!preferenceScreenCreator.hasCompleteHierarchy()) {
+                removeControllersForHybridMode();
+            }
             setPreferenceScreen(screen);
-            requireActivity().setTitle(screen.getTitle());
         } else {
+            final int resId = getPreferenceScreenResId();
+            if (resId <= 0) {
+                return;
+            }
             addPreferencesFromResource(resId);
             screen = getPreferenceScreen();
         }
@@ -386,13 +403,33 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
         displayResourceTilesToScreen(screen);
     }
 
-    /** Returns if catalyst is enabled on current screen. */
-    protected final boolean isCatalystEnabled() {
-        if (!Flags.catalyst()) {
-            return false;
+    /**
+     * Removes preference controllers that have been migrated to catalyst.
+     *
+     * In hybrid mode, preference screen is inflated from XML resource, while preference metadata
+     * in the preference hierarchy are used to update preference widget UI. To avoid conflict,
+     * remove the preference controllers.
+     */
+    private void removeControllersForHybridMode() {
+        Set<String> keys = getPreferenceKeysInHierarchy();
+        Iterator<AbstractPreferenceController> iterator = mControllers.iterator();
+        Lifecycle lifecycle = getSettingsLifecycle();
+        while (iterator.hasNext()) {
+            AbstractPreferenceController controller = iterator.next();
+            String key = controller.getPreferenceKey();
+            if (keys.contains(key)) {
+                Log.i(TAG, "Remove preference controller for " + key);
+                iterator.remove();
+                List<AbstractPreferenceController> controllers = mPreferenceControllers.get(
+                        controller.getClass());
+                if (controllers != null) {
+                    controllers.remove(controller);
+                }
+                if (controller instanceof LifecycleObserver) {
+                    lifecycle.removeObserver((LifecycleObserver) controller);
+                }
+            }
         }
-        Context context = getContext();
-        return context != null ? getPreferenceScreenCreator(context) != null : false;
     }
 
     /**
@@ -523,7 +560,7 @@ public abstract class DashboardFragment extends SettingsPreferenceFragment
     /**
      * Refresh preference items backed by DashboardCategory.
      */
-    private void refreshDashboardTiles(final String tag) {
+    protected void refreshDashboardTiles(final String tag) {
         final PreferenceScreen screen = getPreferenceScreen();
 
         final DashboardCategory category =

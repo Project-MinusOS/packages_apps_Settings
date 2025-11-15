@@ -58,9 +58,12 @@ android_robolectric_test {
         "Settings-robo-testutils",
         "Settings-testutils2",
         "SettingsLib-robo-testutils",
+        "SettingsLibIpc-testutils",
+        "SettingsLibPreference-testutils",
         "Settings_robolectric_meta_service_file",
         "aconfig_settings_flags_lib",
         "android.webkit.flags-aconfig-java",
+        "androidx.lifecycle_lifecycle-runtime-testing",
         "androidx.test.core",
         "androidx.test.espresso.core",
         "androidx.test.ext.junit",
@@ -76,17 +79,27 @@ android_robolectric_test {
         "platform-test-annotations",
         "testables",
         "android.app.flags-aconfig-java",
+        "com_android_systemui_flags_lib",
     ],
 
     libs: [
         "android.test.mock.impl",
+        "framework-virtualization.stubs.system",
         "ims-common",
+    ],
+
+    associates: [
+        "Settings-core",
     ],
 
     java_resource_dirs: [
         "config",
         "resources",
     ],
+
+    // Required for TestParameterInjector
+    javacflags: ["-parameters"],
+    kotlincflags: ["-java-parameters"],
 
     instrumentation_for: "SettingsRoboTestStub",
 
@@ -101,18 +114,21 @@ android_robolectric_test {
         "SettingsLib-search",
     ],
 
-    upstream: true,
-
     strict_mode: false,
 }
 
 java_library {
     name: "Settings-robo-testutils",
-    srcs: ["testutils/**/*.java"],
+    srcs: [
+        "testutils/**/*.java",
+        "testutils/**/*.kt",
+    ],
     libs: [
-        "Robolectric_all-target_upstream",
+        "Robolectric_all-target",
         "Settings-core",
+        "androidx.test.core",
         "mockito-robolectric-prebuilt",
         "truth",
     ],
+    test_only: true,
 }

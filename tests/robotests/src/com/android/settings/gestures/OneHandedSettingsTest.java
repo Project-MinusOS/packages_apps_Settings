@@ -19,16 +19,12 @@ package com.android.settings.gestures;
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import android.os.SystemProperties;
 import android.provider.SearchIndexableResource;
 
 import androidx.test.core.app.ApplicationProvider;
-
-import com.android.settings.R;
-import com.android.settings.accessibility.AccessibilityUtil.QuickSettingsTooltipType;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -39,7 +35,9 @@ import org.robolectric.util.ReflectionHelpers;
 
 import java.util.List;
 
-/** Tests for {@link OneHandedSettings}. */
+/**
+ * Tests for {@link OneHandedSettings}.
+ */
 @RunWith(RobolectricTestRunner.class)
 public class OneHandedSettingsTest {
 
@@ -49,21 +47,7 @@ public class OneHandedSettingsTest {
     @Before
     public void setUp() {
         mSettings = spy(new OneHandedSettings());
-    }
-
-    @Test
-    public void getTileTooltipContent_returnsExpectedValues() {
-        // Simulate to call getTileTooltipContent after onDetach
-        assertThat(mSettings.getTileTooltipContent(QuickSettingsTooltipType.GUIDE_TO_EDIT))
-                .isNull();
-        // Simulate to call getTileTooltipContent after onAttach
-        when(mSettings.getContext()).thenReturn(mContext);
-        assertThat(mSettings.getTileTooltipContent(QuickSettingsTooltipType.GUIDE_TO_EDIT))
-                .isEqualTo(mContext.getText(
-                        R.string.accessibility_one_handed_mode_qs_tooltip_content));
-        assertThat(mSettings.getTileTooltipContent(QuickSettingsTooltipType.GUIDE_TO_DIRECT_USE))
-                .isEqualTo(mContext.getText(
-                        R.string.accessibility_one_handed_mode_auto_added_qs_tooltip_content));
+        SystemProperties.set(OneHandedSettingsUtils.SUPPORT_ONE_HANDED_MODE, "true");
     }
 
     @Test
@@ -101,5 +85,16 @@ public class OneHandedSettingsTest {
                 ReflectionHelpers.ClassParameter.from(Context.class, mContext));
         final boolean isEnabled = (Boolean) obj;
         assertThat(isEnabled).isFalse();
+    }
+
+    @Test
+    public void getNonIndexableKeys_containsNonSearchableElements() {
+        final List<String> niks = OneHandedSettings.SEARCH_INDEX_DATA_PROVIDER
+                .getNonIndexableKeys(mContext);
+
+        assertThat(niks).containsExactly(
+                "gesture_one_handed_mode_intro",
+                "one_handed_header",
+                "one_handed_mode_footer");
     }
 }

@@ -24,6 +24,8 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 
+import java.util.Objects;
+
 @RunWith(RobolectricTestRunner.class)
 public class AudioSharingDeviceItemTest {
     private static final String TEST_NAME = "test";
@@ -77,5 +79,38 @@ public class AudioSharingDeviceItemTest {
         assertThat(itemFromParcel.getName()).isEqualTo(TEST_NAME);
         assertThat(itemFromParcel.getGroupId()).isEqualTo(TEST_GROUP_ID);
         assertThat(itemFromParcel.isActive()).isEqualTo(TEST_IS_ACTIVE);
+    }
+
+    @Test
+    public void toString_correctValue() {
+        AudioSharingDeviceItem item =
+                new AudioSharingDeviceItem(TEST_NAME, TEST_GROUP_ID, TEST_IS_ACTIVE);
+        assertThat(item.toString()).isEqualTo(
+                "AudioSharingDeviceItem groupId = " + TEST_GROUP_ID + ", isActive = "
+                        + TEST_IS_ACTIVE);
+    }
+
+    @Test
+    public void equals_returnsFalse() {
+        AudioSharingDeviceItem item =
+                new AudioSharingDeviceItem(TEST_NAME, TEST_GROUP_ID, TEST_IS_ACTIVE);
+        assertThat(item.equals(null)).isFalse();
+    }
+
+    @Test
+    public void equals_returnsTrue() {
+        AudioSharingDeviceItem item1 =
+                new AudioSharingDeviceItem(TEST_NAME, TEST_GROUP_ID, TEST_IS_ACTIVE);
+        AudioSharingDeviceItem item2 =
+                new AudioSharingDeviceItem(TEST_NAME, TEST_GROUP_ID, TEST_IS_ACTIVE);
+        assertThat(item1.equals(item2)).isTrue();
+    }
+
+    @Test
+    public void hash() {
+        AudioSharingDeviceItem item = new AudioSharingDeviceItem(TEST_NAME, TEST_GROUP_ID,
+                TEST_IS_ACTIVE);
+        assertThat(item.hashCode()).isEqualTo(
+                Objects.hash(TEST_NAME, TEST_GROUP_ID, TEST_IS_ACTIVE));
     }
 }

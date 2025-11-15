@@ -23,10 +23,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.app.Flags;
 import android.content.ContentResolver;
 import android.content.Context;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.provider.Settings;
 import android.widget.Button;
@@ -49,7 +47,6 @@ import org.robolectric.RuntimeEnvironment;
 
 import java.time.Duration;
 
-@EnableFlags(Flags.FLAG_MODES_UI)
 @RunWith(RobolectricTestRunner.class)
 public final class ZenModeButtonPreferenceControllerTest {
 
@@ -190,7 +187,7 @@ public final class ZenModeButtonPreferenceControllerTest {
         Button button = new Button(mContext);
         LayoutPreference pref = mock(LayoutPreference.class);
         when(pref.findViewById(anyInt())).thenReturn(button);
-        ZenMode zenMode = TestModeBuilder.MANUAL_DND_INACTIVE;
+        ZenMode zenMode = TestModeBuilder.MANUAL_DND;
 
         mController.updateZenMode(pref, zenMode);
         button.callOnClick();
@@ -204,7 +201,7 @@ public final class ZenModeButtonPreferenceControllerTest {
         Button button = new Button(mContext);
         LayoutPreference pref = mock(LayoutPreference.class);
         when(pref.findViewById(anyInt())).thenReturn(button);
-        ZenMode zenMode = TestModeBuilder.MANUAL_DND_INACTIVE;
+        ZenMode zenMode = TestModeBuilder.MANUAL_DND;
 
         mController.updateZenMode(pref, zenMode);
         button.callOnClick();

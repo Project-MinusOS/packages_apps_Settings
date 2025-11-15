@@ -62,6 +62,7 @@ public class PrivateSpaceMaintainer {
     private final ActivityManager mActivityManager;
     private  int mErrorCode;
     @GuardedBy("this")
+    @Nullable
     private UserHandle mUserHandle;
     private final KeyguardManager mKeyguardManager;
     /** This variable should be accessed via {@link #getProfileBroadcastReceiver()} only. */
@@ -179,7 +180,7 @@ public class PrivateSpaceMaintainer {
 
         List<UserInfo> users = mUserManager.getProfiles(mContext.getUserId());
         for (UserInfo user : users) {
-            if (user.isPrivateProfile()) {
+            if (user.isPrivateProfile() && user.isEnabled()) {
                 mUserHandle = user.getUserHandle();
                 registerBroadcastReceiver();
                 return true;
@@ -419,12 +420,16 @@ public class PrivateSpaceMaintainer {
             mContext.unregisterReceiver(/* receiver= */ this);
         }
 
+        @GuardedBy("PrivateSpaceMaintainer.this")
         @Override
         public void onReceive(@NonNull Context context, @NonNull Intent intent) {
             UserHandle userHandle = intent.getParcelableExtra(Intent.EXTRA_USER, UserHandle.class);
             if (intent.getAction().equals(Intent.ACTION_PROFILE_REMOVED)) {
                 // This applies to all profiles getting removed, since there is no way to tell if
                 // it is a private profile that got removed.
+                if (userHandle.equals(getPrivateProfileHandle())) {
+                    mUserHandle = null;
+                }
                 removeSettingsAllTasks();
                 unregisterBroadcastReceiver();
                 return;

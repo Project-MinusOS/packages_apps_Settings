@@ -41,6 +41,7 @@ import android.content.pm.UserInfo;
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.hardware.biometrics.Flags;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.SystemProperties;
@@ -68,8 +69,6 @@ import androidx.annotation.VisibleForTesting;
 import com.android.settings.biometrics.IdentityCheckBiometricErrorDialog;
 import com.android.settings.core.InstrumentedFragment;
 import com.android.settings.enterprise.ActionDisabledByAdminDialogHelper;
-import com.android.settings.flags.Flags;
-import com.android.settings.network.SubscriptionUtil;
 import com.android.settings.password.ChooseLockSettingsHelper;
 import com.android.settings.password.ConfirmDeviceCredentialActivity;
 import com.android.settings.password.ConfirmLockPattern;
@@ -81,6 +80,7 @@ import com.google.android.setupcompat.template.FooterBarMixin;
 import com.google.android.setupcompat.template.FooterButton;
 import com.google.android.setupcompat.template.FooterButton.ButtonType;
 import com.google.android.setupdesign.GlifLayout;
+import com.google.android.setupdesign.util.ThemeHelper;
 
 import java.util.List;
 
@@ -195,7 +195,13 @@ public class MainClear extends InstrumentedFragment implements OnGlobalLayoutLis
                     Utils.requestBiometricAuthenticationForMandatoryBiometrics(getActivity(),
                             false /* biometricsAuthenticationRequested */,
                             userId);
-            if (biometricAuthStatus == Utils.BiometricStatus.OK) {
+            if (Flags.bpFallbackOptions()) {
+                if (biometricAuthStatus != Utils.BiometricStatus.NOT_ACTIVE) {
+                    Utils.launchBiometricPromptForMandatoryBiometrics(this, BIOMETRICS_REQUEST,
+                            userId, false /* hideBackground */);
+                    return;
+                }
+            } else if (biometricAuthStatus == Utils.BiometricStatus.OK) {
                 Utils.launchBiometricPromptForMandatoryBiometrics(this, BIOMETRICS_REQUEST,
                         userId, false /* hideBackground */);
                 return;
@@ -425,7 +431,8 @@ public class MainClear extends InstrumentedFragment implements OnGlobalLayoutLis
      */
     @VisibleForTesting
     boolean showAnySubscriptionInfo(Context context) {
-        return (context != null) && SubscriptionUtil.isSimHardwareVisible(context);
+        return (context != null) && (Utils.isMobileDataCapable(context)
+                                         || Utils.isVoiceCapable(context));
     }
 
     /**
@@ -482,18 +489,13 @@ public class MainClear extends InstrumentedFragment implements OnGlobalLayoutLis
                         .setText(R.string.main_clear_button_text)
                         .setListener(mInitiateListener)
                         .setButtonType(ButtonType.OTHER)
-                        .setTheme(com.google.android.setupdesign.R.style.SudGlifButton_Primary)
                         .build());
-        if (Flags.showFactoryResetCancelButton()) {
-            mixin.setSecondaryButton(
-                    new FooterButton.Builder(activity)
-                            .setText(android.R.string.cancel)
-                            .setListener(view -> activity.onBackPressed())
-                            .setButtonType(ButtonType.CANCEL)
-                            .setTheme(
-                                    com.google.android.setupdesign.R.style.SudGlifButton_Secondary)
-                            .build());
-        }
+        mixin.setSecondaryButton(
+                new FooterButton.Builder(activity)
+                        .setText(android.R.string.cancel)
+                        .setListener(view -> activity.onBackPressed())
+                        .setButtonType(ButtonType.CANCEL)
+                        .build());
         mInitiateButton = mixin.getPrimaryButton();
     }
 
@@ -627,6 +629,7 @@ public class MainClear extends InstrumentedFragment implements OnGlobalLayoutLis
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
         final Context context = getContext();
+        ThemeHelper.trySetSuwTheme(context);
         final EnforcedAdmin admin = RestrictedLockUtilsInternal.checkIfRestrictionEnforced(context,
                 UserManager.DISALLOW_FACTORY_RESET, UserHandle.myUserId());
         final UserManager um = UserManager.get(context);

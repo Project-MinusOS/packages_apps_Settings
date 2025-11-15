@@ -34,6 +34,7 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.SystemClock;
+import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -55,9 +56,12 @@ import com.android.internal.widget.LockPatternView.Cell;
 import com.android.internal.widget.LockscreenCredential;
 import com.android.settings.R;
 import com.android.settings.SetupRedactionInterstitial;
+import com.android.settings.Utils;
 import com.android.settingslib.animation.AppearAnimationCreator;
 import com.android.settingslib.animation.AppearAnimationUtils;
 import com.android.settingslib.animation.DisappearAnimationUtils;
+
+import com.google.android.setupdesign.util.ThemeHelper;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -84,6 +88,8 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
     public Intent getIntent() {
         Intent modIntent = new Intent(super.getIntent());
         modIntent.putExtra(EXTRA_SHOW_FRAGMENT, ConfirmLockPatternFragment.class.getName());
+        modIntent.putExtra(ChooseLockSettingsHelper.EXTRA_KEY_USE_EXPRESSIVE_STYLE,
+                ThemeHelper.shouldApplyGlifExpressiveStyle(getApplicationContext()));
         return modIntent;
     }
 
@@ -127,12 +133,12 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
         public View onCreateView(LayoutInflater inflater, ViewGroup container,
                 Bundle savedInstanceState) {
             ConfirmLockPattern activity = (ConfirmLockPattern) getActivity();
-            View view = inflater.inflate(
-                    activity.getConfirmCredentialTheme() == ConfirmCredentialTheme.NORMAL
-                            ? R.layout.confirm_lock_pattern_normal
-                            : R.layout.confirm_lock_pattern,
-                    container,
-                    false);
+            int layoutId = switch (activity.getConfirmCredentialTheme()) {
+                case ConfirmCredentialTheme.NORMAL, ConfirmCredentialTheme.EXPRESSIVE ->
+                        R.layout.confirm_lock_pattern_normal;
+                default -> R.layout.confirm_lock_pattern;
+            };
+            View view = inflater.inflate(layoutId, container, false);
             mGlifLayout = view.findViewById(R.id.setup_wizard_layout);
             mLockPatternView = (LockPatternView) view.findViewById(R.id.lockPattern);
             mErrorTextView = (TextView) view.findViewById(R.id.errorText);
@@ -234,8 +240,17 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
                             ? getDefaultCheckboxLabel()
                             : mCheckBoxLabel);
                 }
-                if (mCancelButton != null && TextUtils.isEmpty(mAlternateButtonText)) {
-                    mCancelButton.setText(R.string.lockpassword_forgot_pattern);
+                if (TextUtils.isEmpty(mAlternateButtonText)) {
+                    int forgotLockPasswordResId = R.string.lockpassword_forgot_pattern;
+                    if (mExpressiveTheme
+                            && mFooterBarMixin != null
+                            && mFooterBarMixin.getSecondaryButton() != null) {
+                        mFooterBarMixin
+                                .getSecondaryButton()
+                                .setText(getActivity(), forgotLockPasswordResId);
+                    } else if (mCancelButton != null) {
+                        mCancelButton.setText(forgotLockPasswordResId);
+                    }
                 }
                 updateRemoteLockscreenValidationViews();
             }
@@ -261,6 +276,9 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
             if (mRemoteLockscreenValidationFragment != null) {
                 mRemoteLockscreenValidationFragment.setListener(null, /* handler= */ null);
             }
+            if (mSaveAndFinishWorker != null) {
+                mSaveAndFinishWorker.setListener(null);
+            }
         }
 
         @Override
@@ -283,11 +301,15 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
                 updateStage(Stage.NeedToUnlock);
             }
             mCredentialCheckResultTracker.setListener(this);
+
             if (mRemoteLockscreenValidationFragment != null) {
                 mRemoteLockscreenValidationFragment.setListener(this, mHandler);
                 if (mRemoteLockscreenValidationFragment.isRemoteValidationInProgress()) {
                     mLockPatternView.setEnabled(false);
                 }
+            }
+            if (mSaveAndFinishWorker != null) {
+                mSaveAndFinishWorker.setListener(this);
             }
         }
 
@@ -421,6 +443,12 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
                 return mDevicePolicyManager.getResources().getString(
                         CONFIRM_WORK_PROFILE_PATTERN_HEADER,
                         () -> getString(R.string.lockpassword_confirm_your_work_pattern_header));
+            }
+            if (android.multiuser.Flags.showCustomUnlockTitleInsidePrivateProfile()
+                    && Utils.isPrivateProfile(mEffectiveUserId, getActivity())
+                    && !UserManager.get(getActivity())
+                    .isQuietModeEnabled(UserHandle.of(mEffectiveUserId))) {
+                return getString(R.string.private_space_confirm_your_pattern_header);
             }
 
             return getString(R.string.lockpassword_confirm_your_pattern_header);
@@ -633,14 +661,17 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
                     if (mCheckBox.isChecked() && mRemoteLockscreenValidationFragment
                             .getLockscreenCredential() != null) {
                         Log.i(TAG, "Setting device screen lock to the other device's screen lock.");
-                        SaveAndFinishWorker saveAndFinishWorker = new SaveAndFinishWorker();
-                        getFragmentManager().beginTransaction().add(saveAndFinishWorker, null)
-                                .commit();
-                        getFragmentManager().executePendingTransactions();
-                        saveAndFinishWorker
-                                .setListener(this)
-                                .setRequestGatekeeperPasswordHandle(true);
-                        saveAndFinishWorker.start(
+                        if (mSaveAndFinishWorker == null) {
+                            mSaveAndFinishWorker = new SaveAndFinishWorker();
+                            getFragmentManager().beginTransaction().add(mSaveAndFinishWorker,
+                                            FRAGMENT_TAG_SAVE_AND_FINISH)
+                                    .commit();
+                            getFragmentManager().executePendingTransactions();
+                            mSaveAndFinishWorker
+                                    .setListener(this)
+                                    .setRequestGatekeeperPasswordHandle(true);
+                        }
+                        mSaveAndFinishWorker.start(
                                 mLockPatternUtils,
                                 mRemoteLockscreenValidationFragment.getLockscreenCredential(),
                                 /* currentCredential= */ null,

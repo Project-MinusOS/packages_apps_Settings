@@ -25,6 +25,7 @@ import android.app.time.TimeZoneCapabilities;
 import android.app.time.TimeZoneCapabilitiesAndConfig;
 import android.app.time.TimeZoneConfiguration;
 import android.content.Context;
+import android.util.Log;
 
 import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
@@ -64,8 +65,10 @@ public class LocationTimeZoneDetectionPreferenceController
 
     @Override
     public boolean isChecked() {
+        // forceRefresh set to true as the location toggle may have been turned off by switching off
+        // automatic time zone
         TimeZoneCapabilitiesAndConfig capabilitiesAndConfig =
-                getTimeZoneCapabilitiesAndConfig(/*forceRefresh=*/false);
+                getTimeZoneCapabilitiesAndConfig(/*forceRefresh=*/ true);
         TimeZoneConfiguration configuration = capabilitiesAndConfig.getConfiguration();
         return configuration.isGeoDetectionEnabled();
     }
@@ -73,7 +76,7 @@ public class LocationTimeZoneDetectionPreferenceController
     @Override
     public boolean setChecked(boolean isChecked) {
         TimeZoneCapabilitiesAndConfig timeZoneCapabilitiesAndConfig =
-                getTimeZoneCapabilitiesAndConfig(/*forceRefresh=*/false);
+                getTimeZoneCapabilitiesAndConfig(/*forceRefresh=*/ false);
         boolean isLocationEnabled =
                 timeZoneCapabilitiesAndConfig.getCapabilities().isUseLocationEnabled();
         if (isChecked && !isLocationEnabled) {
@@ -130,15 +133,23 @@ public class LocationTimeZoneDetectionPreferenceController
                 getTimeZoneCapabilitiesAndConfig(/* forceRefresh= */ false).getCapabilities();
         int capability = timeZoneCapabilities.getConfigureGeoDetectionEnabledCapability();
 
-        // The preference only has two states: present and not present. The preference is never
-        // present but disabled.
+        // The preference can be present and enabled, present and disabled or not present.
         if (capability == CAPABILITY_NOT_SUPPORTED || capability == CAPABILITY_NOT_ALLOWED) {
             return UNSUPPORTED_ON_DEVICE;
         } else if (capability == CAPABILITY_NOT_APPLICABLE || capability == CAPABILITY_POSSESSED) {
-            return AVAILABLE;
+            return isAutoTimeZoneEnabled() ? AVAILABLE : DISABLED_DEPENDENT_SETTING;
         } else {
-            throw new IllegalStateException("Unknown capability=" + capability);
+            Log.e(TAG, "Unknown capability=" + capability);
+            return UNSUPPORTED_ON_DEVICE;
         }
+    }
+
+    @Override
+    public void updateState(Preference preference) {
+        super.updateState(preference);
+
+        // enable / disable the toggle based on automatic time zone being enabled or not
+        preference.setEnabled(isAutoTimeZoneEnabled());
     }
 
     @Override
@@ -211,5 +222,14 @@ public class LocationTimeZoneDetectionPreferenceController
             mTimeZoneCapabilitiesAndConfig = mTimeManager.getTimeZoneCapabilitiesAndConfig();
         }
         return mTimeZoneCapabilitiesAndConfig;
+    }
+
+    /**
+     * Returns whether the user can select this preference or not, as it is a sub toggle of
+     * automatic time zone.
+     */
+    private boolean isAutoTimeZoneEnabled() {
+        return mTimeManager.getTimeZoneCapabilitiesAndConfig().getConfiguration()
+                .isAutoDetectionEnabled();
     }
 }

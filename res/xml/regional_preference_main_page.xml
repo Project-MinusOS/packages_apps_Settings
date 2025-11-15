@@ -20,46 +20,48 @@
     android:key="regional_preferences">
 
     <com.android.settingslib.widget.TopIntroPreference
-        android:title="@string/regional_preferences_main_page_sub_title"
-        android:persistent="false" />
+        android:key="regional_pref_intro"
+        android:title="@string/regional_preferences_main_page_sub_title" />
 
-    <Preference
-        android:key="key_temperature_unit"
-        android:title="@string/temperature_preferences_title"
-        android:summary="@string/default_string_of_regional_preference"
-        settings:controller="com.android.settings.regionalpreferences.TemperatureUnitController"
-        settings:fragment="com.android.settings.regionalpreferences.TemperatureUnitFragment">
-        <extra
-            android:name="arg_key_regional_preference"
-            android:value="mu" />
-    </Preference>
+    <com.android.settingslib.widget.UntitledPreferenceCategory
+        android:key="regional_preferences_category">
+        <Preference
+            android:key="key_temperature_unit"
+            android:title="@string/temperature_preferences_title"
+            android:summary="@string/default_string_of_regional_preference"
+            settings:controller="com.android.settings.regionalpreferences.TemperatureUnitController"
+            settings:fragment="com.android.settings.regionalpreferences.TemperatureUnitFragment">
+            <extra
+                android:name="arg_key_regional_preference"
+                android:value="mu"/>
+        </Preference>
 
-    <Preference
-        android:key="key_first_day_of_week"
-        android:title="@string/first_day_of_week_preferences_title"
-        android:summary="@string/default_string_of_regional_preference"
-        settings:controller="com.android.settings.regionalpreferences.FirstDayOfWeekController"
-        settings:fragment="com.android.settings.regionalpreferences.FirstDayOfWeekItemFragment">
-        <extra
-            android:name="arg_key_regional_preference"
-            android:value="fw" />
-    </Preference>
+        <Preference
+            android:key="key_first_day_of_week"
+            android:title="@string/first_day_of_week_preferences_title"
+            android:summary="@string/default_string_of_regional_preference"
+            settings:controller="com.android.settings.regionalpreferences.FirstDayOfWeekController"
+            settings:fragment="com.android.settings.regionalpreferences.FirstDayOfWeekItemFragment">
+            <extra
+                android:name="arg_key_regional_preference"
+                android:value="fw"/>
+        </Preference>
 
-    <Preference
-        android:key="key_numbering_system"
-        android:title="@string/numbers_preferences_title"
-        android:summary="@string/default_string_of_regional_preference"
-        settings:controller="com.android.settings.regionalpreferences.NumberingSystemController"
-        settings:fragment="com.android.settings.regionalpreferences.NumberingPreferencesFragment">
-        <extra
-            android:name="arg_key_regional_preference"
-            android:value="arg_value_language_select" />
-    </Preference>
+        <Preference
+            android:key="key_numbering_system"
+            android:title="@string/numbers_preferences_title"
+            android:summary="@string/default_string_of_regional_preference"
+            settings:controller="com.android.settings.regionalpreferences.NumberingSystemController"
+            settings:fragment="com.android.settings.regionalpreferences.NumberingPreferencesFragment">
+            <extra
+                android:name="arg_key_regional_preference"
+                android:value="arg_value_language_select"/>
+        </Preference>
+    </com.android.settingslib.widget.UntitledPreferenceCategory>
 
     <com.android.settingslib.widget.FooterPreference
         android:key="regional_pref_footer"
         android:title="@string/title_regional_pref_footer"
-        android:selectable="false"
         settings:searchable="false"
         settings:controller="com.android.settings.regionalpreferences.RegionalFooterPreferenceController"/>
 

@@ -26,9 +26,7 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-import android.app.Flags;
 import android.content.Context;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.service.notification.ZenPolicy;
 
@@ -49,7 +47,6 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 
 @RunWith(RobolectricTestRunner.class)
-@EnableFlags(Flags.FLAG_MODES_UI)
 public final class InterruptionFilterPreferenceControllerTest {
 
     private InterruptionFilterPreferenceController mController;
@@ -71,7 +68,7 @@ public final class InterruptionFilterPreferenceControllerTest {
     @Test
     public void updateState_dnd_enabled() {
         TwoStatePreference preference = mock(TwoStatePreference.class);
-        ZenMode dnd = TestModeBuilder.MANUAL_DND_ACTIVE;
+        ZenMode dnd = TestModeBuilder.MANUAL_DND;
 
         mController.updateState(preference, dnd);
 
@@ -81,7 +78,11 @@ public final class InterruptionFilterPreferenceControllerTest {
     @Test
     public void updateState_specialDnd_disabled() {
         TwoStatePreference preference = mock(TwoStatePreference.class);
-        ZenMode specialDnd = TestModeBuilder.manualDnd(INTERRUPTION_FILTER_NONE, true);
+        ZenMode specialDnd = new TestModeBuilder()
+                .makeManualDnd()
+                .setInterruptionFilter(INTERRUPTION_FILTER_NONE)
+                .setActive(true)
+                .build();
 
         mController.updateState(preference, specialDnd);
 
@@ -126,7 +127,7 @@ public final class InterruptionFilterPreferenceControllerTest {
         verify(mBackend).updateMode(captor.capture());
         assertThat(captor.getValue().getPolicy().getPriorityCategoryAlarms())
                 .isEqualTo(STATE_DISALLOW);
-        assertThat(captor.getValue().getRule().getInterruptionFilter())
+        assertThat(captor.getValue().getInterruptionFilter())
                 .isEqualTo(INTERRUPTION_FILTER_PRIORITY);
     }
 
@@ -158,7 +159,7 @@ public final class InterruptionFilterPreferenceControllerTest {
         verify(mBackend).updateMode(captor.capture());
         assertThat(captor.getValue().getPolicy().getPriorityCategoryAlarms())
                 .isEqualTo(STATE_DISALLOW);
-        assertThat(captor.getValue().getRule().getInterruptionFilter())
+        assertThat(captor.getValue().getInterruptionFilter())
                 .isEqualTo(INTERRUPTION_FILTER_ALL);
     }
 }

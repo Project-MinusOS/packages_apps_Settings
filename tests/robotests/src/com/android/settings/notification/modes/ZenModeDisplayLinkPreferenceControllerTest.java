@@ -22,9 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-import android.app.Flags;
 import android.content.Context;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 
 import androidx.preference.Preference;
@@ -43,7 +41,6 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 
 @RunWith(RobolectricTestRunner.class)
-@EnableFlags(Flags.FLAG_MODES_UI)
 public final class ZenModeDisplayLinkPreferenceControllerTest {
 
     private ZenModeDisplayLinkPreferenceController mController;
@@ -68,7 +65,7 @@ public final class ZenModeDisplayLinkPreferenceControllerTest {
     @Test
     public void updateState_dnd_enabled() {
         Preference preference = mock(Preference.class);
-        ZenMode dnd = TestModeBuilder.MANUAL_DND_ACTIVE;
+        ZenMode dnd = TestModeBuilder.MANUAL_DND;
 
         mController.updateState(preference, dnd);
 
@@ -78,7 +75,11 @@ public final class ZenModeDisplayLinkPreferenceControllerTest {
     @Test
     public void updateState_specialDnd_disabled() {
         Preference preference = mock(Preference.class);
-        ZenMode specialDnd = TestModeBuilder.manualDnd(INTERRUPTION_FILTER_NONE, true);
+        ZenMode specialDnd = new TestModeBuilder()
+                .makeManualDnd()
+                .setInterruptionFilter(INTERRUPTION_FILTER_NONE)
+                .setActive(true)
+                .build();
 
         mController.updateState(preference, specialDnd);
 

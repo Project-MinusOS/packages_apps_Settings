@@ -21,10 +21,12 @@ import static android.telephony.SubscriptionManager.PROFILE_CLASS_PROVISIONING;
 import android.app.Activity;
 import android.app.Dialog;
 import android.app.settings.SettingsEnums;
+import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Bundle;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -32,7 +34,6 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.app.AlertDialog;
 
-import com.android.internal.telephony.flags.Flags;
 import com.android.settings.R;
 import com.android.settings.network.SubscriptionUtil;
 
@@ -91,31 +92,55 @@ public class PreferredSimDialogFragment extends SimDialogFragment implements
         }
 
         if (dialog == null) {
-            Log.d(TAG, "Dialog is null.");
-            dismiss();
+            dismiss("Dialog is null.");
+            return;
+        }
+        Context context = getContext();
+        if (context == null) {
+            dismiss("getContext is null.");
             return;
         }
 
         final SubscriptionInfo info = getPreferredSubscription();
         if (info == null || (info.isEmbedded()
             && (info.getProfileClass() == PROFILE_CLASS_PROVISIONING
-                || (Flags.oemEnabledSatelliteFlag() && info.isOnlyNonTerrestrialNetwork())))) {
-            dismiss();
+                || info.isOnlyNonTerrestrialNetwork()))) {
+            dismiss("SubscriptionInfo is null or other esim's cases.");
             return;
         }
         Log.d(TAG, "SubscriptionInfo: " + info);
+        TelephonyManager telephonyManager = context.getSystemService(TelephonyManager.class);
+        if (telephonyManager == null) {
+            dismiss("TelephonyManager is null.");
+            return;
+        }
+        telephonyManager = telephonyManager.createForSubscriptionId(info.getSubscriptionId());
+        if (telephonyManager.isDataEnabledForReason(TelephonyManager.DATA_ENABLED_REASON_USER)) {
+            dismiss("mobile data is on.");
+            final SimDialogActivity activity = (SimDialogActivity) getActivity();
+            if (activity != null) {
+                activity.finish();
+            }
+            return;
+        }
+
         final CharSequence simName =
-                SubscriptionUtil.getUniqueSubscriptionDisplayName(info, getContext());
+                SubscriptionUtil.getUniqueSubscriptionDisplayName(info, context);
         final String title =
-                getContext().getString(
+                context.getString(
                         getTitleResId(),
                         simName);
         final String message =
-                getContext().getString(
+                context.getString(
                         R.string.sim_preferred_message,
                         simName);
         dialog.setTitle(title);
         dialog.setMessage(message);
+    }
+
+    private void dismiss(String log) {
+        Log.d(TAG, log);
+        dismiss();
     }
 
     @Override

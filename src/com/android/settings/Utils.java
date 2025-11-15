@@ -18,6 +18,8 @@ package com.android.settings;
 
 import static android.content.Intent.EXTRA_USER;
 import static android.content.Intent.EXTRA_USER_ID;
+import static android.hardware.devicestate.DeviceState.PROPERTY_FOLDABLE_DISPLAY_CONFIGURATION_INNER_PRIMARY;
+import static android.hardware.devicestate.DeviceState.PROPERTY_FOLDABLE_DISPLAY_CONFIGURATION_OUTER_PRIMARY;
 import static android.os.UserManager.USER_TYPE_FULL_SYSTEM;
 import static android.os.UserManager.USER_TYPE_PROFILE_MANAGED;
 import static android.os.UserManager.USER_TYPE_PROFILE_PRIVATE;
@@ -27,6 +29,7 @@ import static android.text.format.DateUtils.FORMAT_SHOW_DATE;
 import static com.android.settings.password.ConfirmDeviceCredentialActivity.BIOMETRIC_PROMPT_AUTHENTICATORS;
 import static com.android.settings.password.ConfirmDeviceCredentialActivity.BIOMETRIC_PROMPT_HIDE_BACKGROUND;
 import static com.android.settings.password.ConfirmDeviceCredentialActivity.BIOMETRIC_PROMPT_NEGATIVE_BUTTON_TEXT;
+import static com.android.settings.password.ConfirmDeviceCredentialActivity.EXTRA_DATA;
 
 import android.app.ActionBar;
 import android.app.Activity;
@@ -60,6 +63,8 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.VectorDrawable;
 import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.SensorProperties;
+import android.hardware.devicestate.DeviceState;
+import android.hardware.devicestate.DeviceStateManager;
 import android.hardware.face.Face;
 import android.hardware.face.FaceManager;
 import android.hardware.face.FaceSensorPropertiesInternal;
@@ -131,6 +136,7 @@ import com.android.settings.password.ConfirmDeviceCredentialActivity;
 import com.android.settingslib.widget.ActionBarShadowController;
 import com.android.settingslib.widget.AdaptiveIcon;
 
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -161,11 +167,6 @@ public final class Utils extends com.android.settingslib.Utils {
      */
     public static final String PROPERTY_DEVICE_IDENTIFIER_ACCESS_RESTRICTIONS_DISABLED =
             "device_identifier_access_restrictions_disabled";
-
-    /**
-     * Whether to show location indicators.
-     */
-    public static final String PROPERTY_LOCATION_INDICATORS_ENABLED = "location_indicators_enabled";
 
     /**
      * Whether to show location indicator settings in developer options.
@@ -212,9 +213,36 @@ public final class Utils extends com.android.settingslib.Utils {
      * Returns whether the device is voice-capable (meaning, it is also a phone).
      */
     public static boolean isVoiceCapable(Context context) {
+        if (isTelephonyDisabled(context)) return false;
         final TelephonyManager telephony =
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-        return telephony != null && telephony.isVoiceCapable();
+        return telephony != null && telephony.isDeviceVoiceCapable();
+    }
+
+    /**
+     * Returns whether the device is mobile data capable.
+     */
+    public static boolean isMobileDataCapable(Context context) {
+        if (isTelephonyDisabled(context)) return false;
+        final TelephonyManager telephony = context.getSystemService(TelephonyManager.class);
+        return telephony != null && telephony.isDataCapable();
+    }
+
+    /**
+     * Returns whether the device is SMS capable.
+     */
+    public static boolean isSmsMessagingCapable(@NonNull Context context) {
+        if (isTelephonyDisabled(context)) return false;
+        final TelephonyManager telephony = context.getSystemService(TelephonyManager.class);
+        return telephony != null && telephony.isDeviceSmsCapable();
+    }
+
+    /**
+     * Returns whether telephony features are completely disabled in the app, regardless
+     * of the TelephonyManager reported capabilities or the PackageManager flags declared.
+     */
+    private static boolean isTelephonyDisabled(Context context) {
+        return !context.getResources().getBoolean(R.bool.config_show_sim_info);
     }
 
     /**
@@ -423,7 +451,8 @@ public final class Utils extends com.android.settingslib.Utils {
         final List<UserHandle> userProfiles = userManager.getUserProfiles();
         String umUserType = getUmUserType(userType);
         for (UserHandle profile : userProfiles) {
-            if (profile.getIdentifier() == UserHandle.myUserId()) {
+            if (!com.android.settings.flags.Flags.utilsReturnUserHandleForCurrentUserId()
+                    && profile.getIdentifier() == UserHandle.myUserId()) {
                 continue;
             }
             final UserInfo userInfo = userManager.getUserInfo(profile.getIdentifier());
@@ -694,7 +723,7 @@ public final class Utils extends com.android.settingslib.Utils {
         final SpannableString str = new SpannableString(displayText);
         str.setSpan(new TtsSpan.TextBuilder(accessibileText).build(), 0,
                 displayText.length(),
-                Spannable.SPAN_INCLUSIVE_INCLUSIVE);
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
         return str;
     }
 
@@ -962,6 +991,62 @@ public final class Utils extends com.android.settingslib.Utils {
     }
 
     /**
+     * Returns {@code true} if the device is potentially a foldable device, {@code false} otherwise.
+     * Note: Relies on device state properties (newer APIs) or internal resources (older fallback,
+     * less reliable).
+     *
+     * @param context The application or activity context.
+     * @return {@code true} if the device appears to be foldable, {@code false} otherwise.
+     */
+    public static boolean isDeviceFoldable(@NonNull Context context) {
+        if (android.hardware.devicestate.feature.flags.Flags.deviceStatePropertyMigration()) {
+            return isDeviceFoldablePostMigration(context);
+        } else {
+            return isDeviceFoldableLegacy(context);
+        }
+    }
+
+    private static boolean isDeviceFoldablePostMigration(Context context) {
+        DeviceStateManager deviceStateManager = context.getSystemService(DeviceStateManager.class);
+        if (deviceStateManager == null) {
+            Log.w(TAG, "DeviceStateManager is not available.");
+            return false;
+        }
+
+        List<DeviceState> supportedStates = deviceStateManager.getSupportedDeviceStates();
+        if (supportedStates == null) {
+            Log.w(TAG, "getSupportedDeviceStates returned null.");
+            return false; // Should not happen, but defensive check
+        }
+
+        for (DeviceState state : supportedStates) {
+            boolean hasOuterProperty =
+                    state.hasProperty(PROPERTY_FOLDABLE_DISPLAY_CONFIGURATION_OUTER_PRIMARY);
+            boolean hasInnerProperty =
+                    state.hasProperty(PROPERTY_FOLDABLE_DISPLAY_CONFIGURATION_INNER_PRIMARY);
+
+            if (hasOuterProperty || hasInnerProperty) {
+                return true;
+            }
+        }
+
+        return false; // No foldable state properties found
+    }
+
+    private static boolean isDeviceFoldableLegacy(Context context) {
+        try {
+            return context.getResources().getIntArray(
+                    com.android.internal.R.array.config_foldedDeviceStates).length > 0;
+        } catch (Resources.NotFoundException e) {
+            Log.e(TAG, "Error accessing internal resource config_foldedDeviceStates.", e);
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "Unexpected error checking legacy foldable state.", e);
+            return false;
+        }
+    }
+
+    /**
      * Launches an intent which may optionally have a user id defined.
      * @param fragment Fragment to use to launch the activity.
      * @param intent Intent to launch.
@@ -1180,9 +1265,9 @@ public final class Utils extends com.android.settingslib.Utils {
         try {
             return context.getPackageManager().getApplicationInfo(packageName, 0).enabled;
         } catch (Exception e) {
-            Log.e(TAG, "Error while retrieving application info for package " + packageName, e);
+            // Expected, package is not installed or not enabled.
+            return false;
         }
-        return false;
     }
 
     /** Get {@link Resources} by subscription id if subscription id is valid. */
@@ -1329,8 +1414,7 @@ public final class Utils extends com.android.settingslib.Utils {
      */
     @ColorInt
     public static int getHomepageIconColor(Context context) {
-        return getColorAttrDefaultColor(
-                context, com.android.internal.R.attr.materialColorOnSurface);
+        return context.getColor(com.android.internal.R.color.materialColorOnSurface);
     }
 
     /**
@@ -1421,8 +1505,7 @@ public final class Utils extends com.android.settingslib.Utils {
     public static boolean isPrivateProfile(int userId, @NonNull Context context) {
         final UserManager userManager = context.getSystemService(UserManager.class);
         UserInfo userInfo = userManager.getUserInfo(userId);
-        return Flags.allowPrivateProfile() && android.multiuser.Flags.enablePrivateSpaceFeatures()
-                && userInfo.isPrivateProfile();
+        return !Objects.isNull(userInfo) && userInfo.isPrivateProfile();
     }
 
     /**
@@ -1511,18 +1594,17 @@ public final class Utils extends com.android.settingslib.Utils {
             Log.e(TAG, "Biometric Manager is null.");
             return BiometricStatus.NOT_ACTIVE;
         }
-        if (android.hardware.biometrics.Flags.mandatoryBiometrics()
-                && !biometricsAuthenticationRequested) {
+        if (!biometricsAuthenticationRequested) {
             final UserManager userManager = context.getSystemService(
                     UserManager.class);
             final int status = biometricManager.canAuthenticate(getEffectiveUserId(
-                    userManager, userId), BiometricManager.Authenticators.MANDATORY_BIOMETRICS);
+                    userManager, userId), BiometricManager.Authenticators.IDENTITY_CHECK);
             switch(status) {
                 case BiometricManager.BIOMETRIC_SUCCESS:
                     return BiometricStatus.OK;
                 case BiometricManager.BIOMETRIC_ERROR_LOCKOUT:
                     return BiometricStatus.LOCKOUT;
-                case BiometricManager.BIOMETRIC_ERROR_MANDATORY_NOT_ACTIVE:
+                case BiometricManager.BIOMETRIC_ERROR_IDENTITY_CHECK_NOT_ACTIVE:
                 case BiometricManager.BIOMETRIC_ERROR_NOT_ENABLED_FOR_APPS:
                     return BiometricStatus.NOT_ACTIVE;
                 default:
@@ -1548,7 +1630,29 @@ public final class Utils extends com.android.settingslib.Utils {
         final UserManager userManager = (UserManager) fragment.getContext().getSystemService(
                 UserManager.class);
         fragment.startActivityForResult(getIntentForBiometricAuthentication(fragment.getResources(),
-                getEffectiveUserId(userManager, userId), hideBackground), requestCode);
+                getEffectiveUserId(userManager, userId), hideBackground, null /* data */),
+                requestCode);
+    }
+
+    /**
+     * Launch biometric prompt for mandatory biometrics. Call
+     * {@link #requestBiometricAuthenticationForMandatoryBiometrics(Context, boolean, int)}
+     * to check if all requirements for mandatory biometrics is satisfied
+     * before launching biometric prompt.
+     *
+     * @param fragment       corresponding fragment of the surface
+     * @param requestCode    for starting the new activity
+     * @param userId         user id for the authentication request
+     * @param hideBackground if the background activity screen needs to be hidden
+     * @param data           additional info to returned to the activity after authentication
+     *                       has ended
+     */
+    public static void launchBiometricPromptForMandatoryBiometrics(@NonNull Fragment fragment,
+            int requestCode, int userId, boolean hideBackground, @Nullable Intent data) {
+        final UserManager userManager = (UserManager) fragment.getContext().getSystemService(
+                UserManager.class);
+        fragment.startActivityForResult(getIntentForBiometricAuthentication(fragment.getResources(),
+                getEffectiveUserId(userManager, userId), hideBackground, data), requestCode);
     }
 
     /**
@@ -1567,7 +1671,7 @@ public final class Utils extends com.android.settingslib.Utils {
         final UserManager userManager = activity.getSystemService(UserManager.class);
         activity.startActivityForResult(getIntentForBiometricAuthentication(
                 activity.getResources(), getEffectiveUserId(userManager, userId),
-                hideBackground), requestCode);
+                hideBackground, null /* data */), requestCode);
     }
 
     private static int getEffectiveUserId(UserManager userManager, int userId) {
@@ -1578,12 +1682,10 @@ public final class Utils extends com.android.settingslib.Utils {
     }
 
     private static Intent getIntentForBiometricAuthentication(Resources resources,
-            int effectiveUserId, boolean hideBackground) {
+            int effectiveUserId, boolean hideBackground, @Nullable Intent data) {
         final Intent intent = new Intent();
-        if (android.hardware.biometrics.Flags.mandatoryBiometrics()) {
-            intent.putExtra(BIOMETRIC_PROMPT_AUTHENTICATORS,
-                    BiometricManager.Authenticators.MANDATORY_BIOMETRICS);
-        }
+        intent.putExtra(BIOMETRIC_PROMPT_AUTHENTICATORS,
+                BiometricManager.Authenticators.IDENTITY_CHECK);
         intent.putExtra(BIOMETRIC_PROMPT_NEGATIVE_BUTTON_TEXT,
                 resources.getString(R.string.cancel));
         intent.putExtra(KeyguardManager.EXTRA_DESCRIPTION,
@@ -1591,6 +1693,7 @@ public final class Utils extends com.android.settingslib.Utils {
         intent.putExtra(ChooseLockSettingsHelper.EXTRA_KEY_ALLOW_ANY_USER, true);
         intent.putExtra(EXTRA_USER_ID, effectiveUserId);
         intent.putExtra(BIOMETRIC_PROMPT_HIDE_BACKGROUND, hideBackground);
+        intent.putExtra(EXTRA_DATA, data);
         intent.setClassName(SETTINGS_PACKAGE_NAME,
                 ConfirmDeviceCredentialActivity.InternalActivity.class.getName());
         return intent;
@@ -1599,5 +1702,20 @@ public final class Utils extends com.android.settingslib.Utils {
     private static void disableComponent(PackageManager pm, ComponentName componentName) {
         pm.setComponentEnabledSetting(componentName,
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP);
+    }
+
+    /**
+     * Returns {@code true} if the supplied package is a protected package. Otherwise, returns
+     * {@code false}.
+     *
+     * @param context the context
+     * @param packageName the package name
+     */
+    public static boolean isProtectedPackage(
+            @NonNull Context context, @NonNull String packageName) {
+        final List<String> protectedPackageNames = Arrays.asList(context.getResources()
+                .getStringArray(com.android.internal.R.array
+                        .config_biometric_protected_package_names));
+        return protectedPackageNames != null && protectedPackageNames.contains(packageName);
     }
 }

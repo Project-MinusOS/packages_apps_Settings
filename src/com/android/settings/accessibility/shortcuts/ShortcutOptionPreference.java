@@ -35,7 +35,6 @@ import com.android.settings.R;
 import com.android.settingslib.widget.LottieColorUtils;
 
 import com.airbnb.lottie.LottieAnimationView;
-import com.airbnb.lottie.LottieDrawable;
 
 /**
  * A preference represents an accessibility shortcut option with a checkbox and a tutorial image
@@ -96,8 +95,10 @@ public class ShortcutOptionPreference extends CheckBoxPreference {
                                                 .getResourceEntryName(mIntroImageRawResId),
                                 result));
                 imageView.setAnimation(mIntroImageRawResId);
-                imageView.setRepeatCount(LottieDrawable.INFINITE);
+                // Follow the Motion Stoppable requirement by using a finite animation.
+                imageView.setRepeatCount(0);
                 LottieColorUtils.applyDynamicColors(imageView.getContext(), imageView);
+                LottieColorUtils.applyMaterialColor(getContext(), imageView);
                 imageView.playAnimation();
             } else {
                 imageView.setImageResource(mIntroImageResId);
@@ -108,6 +109,7 @@ public class ShortcutOptionPreference extends CheckBoxPreference {
         if (summaryView != null) {
             mSummaryTextLineHeight = summaryView.getLineHeight();
             summaryView.setMovementMethod(LinkMovementMethod.getInstance());
+            summaryView.setFocusable(false);
         }
 
         syncSummaryView(holder);

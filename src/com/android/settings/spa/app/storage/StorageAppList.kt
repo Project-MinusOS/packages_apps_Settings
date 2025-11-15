@@ -34,12 +34,12 @@ import com.android.settingslib.spa.framework.util.mapItem
 import com.android.settingslib.spaprivileged.model.app.AppEntry
 import com.android.settingslib.spaprivileged.model.app.AppListModel
 import com.android.settingslib.spaprivileged.model.app.AppRecord
+import com.android.settingslib.spaprivileged.model.app.AppStorageRepositoryImpl
 import com.android.settingslib.spaprivileged.template.app.AppList
 import com.android.settingslib.spaprivileged.template.app.AppListInput
 import com.android.settingslib.spaprivileged.template.app.AppListItem
 import com.android.settingslib.spaprivileged.template.app.AppListItemModel
 import com.android.settingslib.spaprivileged.template.app.AppListPage
-import com.android.settingslib.spaprivileged.template.app.calculateSizeBytes
 import com.android.settingslib.spaprivileged.template.app.getStorageSize
 import kotlinx.coroutines.flow.Flow
 
@@ -60,20 +60,20 @@ sealed class StorageAppListPageProvider(private val type: StorageType) : Setting
 
 sealed class StorageType(
     @StringRes val titleResource: Int,
-    val filter: (AppRecordWithSize) -> Boolean
+    val filter: (ApplicationInfo) -> Boolean
 ) {
     object Apps : StorageType(
         titleResource = R.string.apps_storage,
         filter = {
-            (it.app.flags and ApplicationInfo.FLAG_IS_GAME) == 0 &&
-            it.app.category != ApplicationInfo.CATEGORY_GAME
+            (it.flags and ApplicationInfo.FLAG_IS_GAME) == 0 &&
+            it.category != ApplicationInfo.CATEGORY_GAME
         }
     )
     object Games : StorageType(
         titleResource = R.string.game_storage_settings,
         filter = {
-            (it.app.flags and ApplicationInfo.FLAG_IS_GAME) != 0 ||
-                it.app.category == ApplicationInfo.CATEGORY_GAME
+            (it.flags and ApplicationInfo.FLAG_IS_GAME) != 0 ||
+                it.category == ApplicationInfo.CATEGORY_GAME
         }
     )
 }
@@ -109,16 +109,18 @@ class StorageAppListModel(
         getStorageSize()
     }
 ) : AppListModel<AppRecordWithSize> {
+    private val appStorageRepository = AppStorageRepositoryImpl(context)
+
     override fun transform(userIdFlow: Flow<Int>, appListFlow: Flow<List<ApplicationInfo>>) =
-        appListFlow.mapItem {
-            AppRecordWithSize(it, it.calculateSizeBytes(context) ?: 0L)
+        appListFlow.mapItem { app ->
+            AppRecordWithSize(app, appStorageRepository.calculateSizeBytes(app) ?: 0L)
         }
 
     override fun filter(
         userIdFlow: Flow<Int>,
         option: Int,
         recordListFlow: Flow<List<AppRecordWithSize>>
-    ): Flow<List<AppRecordWithSize>> = recordListFlow.filterItem { type.filter(it) }
+    ): Flow<List<AppRecordWithSize>> = recordListFlow.filterItem { type.filter(it.app) }
 
     @Composable
     override fun getSummary(option: Int, record: AppRecordWithSize): () -> String {

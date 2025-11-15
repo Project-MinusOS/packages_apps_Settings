@@ -22,8 +22,8 @@ import android.text.TextUtils;
 
 import com.android.settings.R;
 
-
-public class CallVolumePreferenceController extends VolumeSeekBarPreferenceController {
+// LINT.IfChange
+public class CallVolumePreferenceController extends VolumeSliderPreferenceController {
 
     private AudioManager mAudioManager;
 
@@ -69,3 +69,4 @@ public class CallVolumePreferenceController extends VolumeSeekBarPreferenceContr
     }
 
 }
+// LINT.ThenChange(CallVolumePreference.kt)

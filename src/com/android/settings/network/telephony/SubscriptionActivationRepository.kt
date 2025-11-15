@@ -37,9 +37,10 @@ class SubscriptionActivationRepository(
 ) {
     fun isActivationChangeableFlow(): Flow<Boolean> = combine(
         callStateRepository.isInCallFlow(),
+        callStateRepository.isInEmergencyCallFlow(),
         satelliteRepository.getIsSessionStartedFlow()
-    ) { isInCall, isSatelliteModemEnabled ->
-        !isInCall && !isSatelliteModemEnabled
+    ) { isInCall, isInEmergencyCallFlow, isSatelliteModemEnabled ->
+        !isInCall && !isInEmergencyCallFlow && !isSatelliteModemEnabled
     }
 
     /**
@@ -52,7 +53,7 @@ class SubscriptionActivationRepository(
             Log.i(TAG, "Unable to toggle subscription due to unusable subscription ID.")
             return
         }
-        if (!active && isEmergencyCallbackMode(subId)) {
+        if (isEmergencyCallbackMode(subId)) {
             val intent = Intent(ACTION_SHOW_NOTICE_ECM_BLOCK_OTHERS).apply {
                 setPackage(Utils.PHONE_PACKAGE_NAME)
             }

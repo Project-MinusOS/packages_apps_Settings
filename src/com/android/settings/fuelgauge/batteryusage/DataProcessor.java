@@ -24,6 +24,7 @@ import static com.android.settingslib.fuelgauge.BatteryStatus.BATTERY_LEVEL_UNKN
 import android.app.usage.IUsageStatsManager;
 import android.app.usage.UsageEvents;
 import android.app.usage.UsageEvents.Event;
+import android.app.usage.UsageEventsQuery;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -170,13 +171,14 @@ public final class DataProcessor {
     }
 
     /** Gets the {@link BatteryUsageStats} from system service. */
-    @Nullable
+    @NonNull
     public static BatteryUsageStats getBatteryUsageStats(final Context context) {
         final long startTime = System.currentTimeMillis();
         final BatteryUsageStatsQuery batteryUsageStatsQuery =
                 new BatteryUsageStatsQuery.Builder()
                         .includeBatteryHistory()
                         .includeProcessStateData()
+                        .accumulated()
                         .build();
         final BatteryUsageStats batteryUsageStats =
                 context.getSystemService(BatteryStatsManager.class)
@@ -238,17 +240,6 @@ public final class DataProcessor {
                 String.format(
                         "getAppUsageEventsForUser() for user %d in %d/ms", userID, elapsedTime));
         return events;
-    }
-
-    /** Closes the {@link BatteryUsageStats} after using it. */
-    public static void closeBatteryUsageStats(BatteryUsageStats batteryUsageStats) {
-        if (batteryUsageStats != null) {
-            try {
-                batteryUsageStats.close();
-            } catch (Exception e) {
-                Log.e(TAG, "BatteryUsageStats.close() failed", e);
-            }
-        }
     }
 
     /**
@@ -1057,9 +1048,16 @@ public final class DataProcessor {
         final long start = System.currentTimeMillis();
         UsageEvents events = null;
         try {
-            events =
-                    usageStatsManager.queryEventsForUser(
-                            startTime, endTime, userId, callingPackage);
+            final UsageEventsQuery usageEventsQuery =
+                    new UsageEventsQuery.Builder(startTime, endTime)
+                            .setUserId(userId)
+                            .setEventTypes(
+                                    Event.ACTIVITY_RESUMED,
+                                    Event.ACTIVITY_STOPPED,
+                                    Event.DEVICE_SHUTDOWN
+                            )
+                            .build();
+            events = usageStatsManager.queryEventsWithFilter(usageEventsQuery, callingPackage);
         } catch (RemoteException e) {
             Log.e(TAG, "Error fetching usage events: ", e);
         }
@@ -1073,20 +1071,15 @@ public final class DataProcessor {
     }
 
     @Nullable
-    private static List<BatteryHistEntry> getBatteryHistListFromFromStatsService(
-            final Context context) {
-        List<BatteryHistEntry> batteryHistEntryList = null;
-        try {
-            final BatteryUsageStats batteryUsageStats = getBatteryUsageStats(context);
+    private static List<BatteryHistEntry> getBatteryHistListFromFromStatsService(Context context) {
+        try (BatteryUsageStats batteryUsageStats = getBatteryUsageStats(context)) {
             final List<BatteryEntry> batteryEntryList =
                     generateBatteryEntryListFromBatteryUsageStats(context, batteryUsageStats);
-            batteryHistEntryList = convertToBatteryHistEntry(batteryEntryList, batteryUsageStats);
-            closeBatteryUsageStats(batteryUsageStats);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "load batteryUsageStats:", e);
+            return convertToBatteryHistEntry(batteryEntryList, batteryUsageStats);
+        } catch (Exception e) {
+            Log.e(TAG, "getBatteryHistListFromFromStatsService:", e);
+            return null;
         }
-
-        return batteryHistEntryList;
     }
 
     @VisibleForTesting

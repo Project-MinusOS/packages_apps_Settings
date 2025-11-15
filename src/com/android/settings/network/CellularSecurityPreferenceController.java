@@ -18,11 +18,11 @@ package com.android.settings.network;
 
 import android.app.settings.SettingsEnums;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.safetycenter.SafetyCenterManager;
+import android.telephony.SubscriptionInfo;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -33,10 +33,11 @@ import androidx.annotation.VisibleForTesting;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
 
-import com.android.internal.telephony.flags.Flags;
 import com.android.settings.core.BasePreferenceController;
 import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.network.telephony.CellularSecuritySettingsFragment;
+
+import java.util.List;
 
 /**
  * {@link BasePreferenceController} for accessing Cellular Security settings from Network &
@@ -66,16 +67,19 @@ public class CellularSecurityPreferenceController extends BasePreferenceControll
 
     @Override
     public int getAvailabilityStatus() {
-        if (!mContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)
-                || !Flags.enableIdentifierDisclosureTransparencyUnsolEvents()
-                || !Flags.enableModemCipherTransparencyUnsolEvents()
-                || !Flags.enableIdentifierDisclosureTransparency()
-                || !Flags.enableModemCipherTransparency()) {
+        if (!mContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_TELEPHONY)) {
             return UNSUPPORTED_ON_DEVICE;
         }
         if (mTelephonyManager == null) {
             Log.w(LOG_TAG, "Telephony manager not yet initialized");
-            mTelephonyManager = mContext.getSystemService(TelephonyManager.class);
+            return CONDITIONALLY_UNAVAILABLE;
+        }
+
+        // Check there are valid SIM cards which can be displayed to the user, otherwise this
+        // settings should not be shown.
+        List<SubscriptionInfo> availableSubs = SubscriptionUtil.getAvailableSubscriptions(mContext);
+        if (availableSubs.isEmpty()) {
+            return CONDITIONALLY_UNAVAILABLE;
         }
 
         boolean isNullCipherDisablementAvailable = false;
@@ -88,10 +92,10 @@ public class CellularSecurityPreferenceController extends BasePreferenceControll
         } catch (UnsupportedOperationException e) {
             Log.i(LOG_TAG, "Null cipher enablement is unsupported, hiding divider: "
                     + e.getMessage());
-        } catch (Exception e) {
+        } catch (IllegalStateException e) {
             Log.e(LOG_TAG,
                     "Failed isNullCipherAndIntegrityEnabled. Setting availability to "
-                            + "CONDITIONALLY_UNAVAILABLE. Exception: "
+                            + "UNSUPPORTED_ON_DEVICE. Exception: "
                             + e.getMessage());
         }
 
@@ -104,6 +108,12 @@ public class CellularSecurityPreferenceController extends BasePreferenceControll
         } catch (UnsupportedOperationException e) {
             Log.i(LOG_TAG, "Cellular security notifications are unsupported, hiding divider: "
                     + e.getMessage());
+        } catch (IllegalStateException e) {
+            Log.e(LOG_TAG,
+                    "Failed isNullCipherNotificationsEnabled, "
+                            + "isCellularIdentifierDisclosureNotificationsEnabled. "
+                            + "Setting availability to UNSUPPORTED_ON_DEVICE. Exception: "
+                            + e.getMessage());
         }
 
         if (isNullCipherDisablementAvailable || areCellSecNotificationsAvailable) {
@@ -118,22 +128,25 @@ public class CellularSecurityPreferenceController extends BasePreferenceControll
         if (!TextUtils.equals(preference.getKey(), getPreferenceKey())) {
             return super.handlePreferenceTreeClick(preference);
         }
-        boolean isSafetyCenterSupported = isSafetyCenterSupported();
-        if (isSafetyCenterSupported) {
-            Intent safetyCenterIntent = new Intent(Intent.ACTION_SAFETY_CENTER);
-            safetyCenterIntent.putExtra(SafetyCenterManager.EXTRA_SAFETY_SOURCES_GROUP_ID,
-                    "AndroidCellularNetworkSecuritySources");
-            mContext.startActivity(safetyCenterIntent);
-        } else {
-            final Bundle bundle = new Bundle();
-            bundle.putString(CellularSecuritySettingsFragment.KEY_CELLULAR_SECURITY_PREFERENCE, "");
-
-            new SubSettingLauncher(mContext)
-                     .setDestination(CellularSecuritySettingsFragment.class.getName())
-                     .setArguments(bundle)
-                     .setSourceMetricsCategory(SettingsEnums.CELLULAR_SECURITY_SETTINGS)
-                     .launch();
+        if (mTelephonyManager == null) {
+            Log.w(LOG_TAG, "Telephony manager not yet initialized");
+            return false;
         }
+        if (!isSafetyCenterSupported() && !mTelephonyManager.isRadioInterfaceCapabilitySupported(
+                mTelephonyManager.CAPABILITY_USES_ALLOWED_NETWORK_TYPES_BITMASK)) {
+            // Realistically, it's unlikely to end up in handlePreferenceTreeClick if SafetyCenter
+            // isn't supported on the device and the IRadio version is below 1.6.
+            return false;
+        }
+        Log.v(LOG_TAG, "Load mobile network security screen.");
+        final Bundle bundle = new Bundle();
+        bundle.putString(CellularSecuritySettingsFragment.KEY_CELLULAR_SECURITY_PREFERENCE, "");
+
+        new SubSettingLauncher(mContext)
+                .setDestination(CellularSecuritySettingsFragment.class.getName())
+                .setArguments(bundle)
+                .setSourceMetricsCategory(SettingsEnums.CELLULAR_SECURITY_SETTINGS)
+                .launch();
         return true;
     }
 
@@ -154,7 +167,7 @@ public class CellularSecurityPreferenceController extends BasePreferenceControll
     protected boolean areNotificationsEnabled() {
         if (mTelephonyManager == null) {
             Log.w(LOG_TAG, "Telephony manager not yet initialized");
-            mTelephonyManager = mContext.getSystemService(TelephonyManager.class);
+            return false;
         }
 
         return mTelephonyManager.isNullCipherNotificationsEnabled()

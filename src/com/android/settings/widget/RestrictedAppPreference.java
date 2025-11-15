@@ -27,6 +27,7 @@ import androidx.preference.PreferenceViewHolder;
 
 import com.android.settingslib.RestrictedLockUtils;
 import com.android.settingslib.RestrictedPreferenceHelper;
+import com.android.settingslib.RestrictedPreferenceHelperProvider;
 import com.android.settingslib.widget.AppPreference;
 
 /**
@@ -34,7 +35,8 @@ import com.android.settingslib.widget.AppPreference;
  * {@link com.android.settingslib.RestrictedPreferenceHelper}.
  * Used to show policy transparency on {@link AppPreference}.
  */
-public class RestrictedAppPreference extends AppPreference {
+public class RestrictedAppPreference extends AppPreference implements
+        RestrictedPreferenceHelperProvider {
     private RestrictedPreferenceHelper mHelper;
     private String userRestriction;
 
@@ -56,6 +58,11 @@ public class RestrictedAppPreference extends AppPreference {
     private void initialize(AttributeSet attrs, String userRestriction) {
         mHelper = new RestrictedPreferenceHelper(getContext(), this, attrs);
         this.userRestriction = userRestriction;
+    }
+
+    @Override
+    public @NonNull RestrictedPreferenceHelper getRestrictedPreferenceHelper() {
+        return mHelper;
     }
 
     @Override
@@ -129,11 +136,12 @@ public class RestrictedAppPreference extends AppPreference {
     /**
      * Checks if the given setting is subject to Enhanced Confirmation Mode restrictions for this
      * package. Marks the preference as disabled if so.
+     * TODO b/390196024: remove this and update all callers to use the "settingEnabled" version
      * @param settingIdentifier The key identifying the setting
      * @param packageName the package to check the settingIdentifier for
      */
     public void checkEcmRestrictionAndSetDisabled(@NonNull String settingIdentifier,
-                                                  @NonNull String packageName) {
-        mHelper.checkEcmRestrictionAndSetDisabled(settingIdentifier, packageName);
+            @NonNull String packageName) {
+        mHelper.checkEcmRestrictionAndSetDisabled(settingIdentifier, packageName, false);
     }
 }

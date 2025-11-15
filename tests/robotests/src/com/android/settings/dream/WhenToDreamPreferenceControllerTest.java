@@ -48,6 +48,7 @@ import org.robolectric.util.ReflectionHelpers;
 @RunWith(RobolectricTestRunner.class)
 public class WhenToDreamPreferenceControllerTest {
     private static final String TEST_PACKAGE = "com.android.test";
+    private static final String PREF_KEY = "when_to_start";
 
     private WhenToDreamPreferenceController mController;
     private Context mContext;
@@ -64,7 +65,7 @@ public class WhenToDreamPreferenceControllerTest {
     public void setup() throws Exception {
         MockitoAnnotations.initMocks(this);
         mContext = spy(ApplicationProvider.getApplicationContext());
-        mController = new WhenToDreamPreferenceController(mContext, true, true);
+        mController = new WhenToDreamPreferenceController(mContext, PREF_KEY, true, true);
         ReflectionHelpers.setField(mController, "mBackend", mBackend);
         when(mContext.getSystemService(PowerManager.class)).thenReturn(mPowerManager);
         when(mPowerManager.isAmbientDisplaySuppressedForTokenByApp(anyString(), anyInt()))
@@ -99,12 +100,11 @@ public class WhenToDreamPreferenceControllerTest {
         final Preference mockPref = mock(Preference.class);
         when(mockPref.getContext()).thenReturn(mContext);
         when(mBackend.getWhenToDreamSetting()).thenReturn(DreamBackend.WHILE_CHARGING);
-        when(mPowerManager.isAmbientDisplaySuppressedForTokenByApp(anyString(), anyInt()))
-                .thenReturn(true);
+        when(mPowerManager.isAmbientDisplaySuppressed()).thenReturn(true);
 
         assertTrue(AmbientDisplayAlwaysOnPreferenceController.isAodSuppressedByBedtime(mContext));
 
         mController.updateState(mockPref);
-        verify(mockPref).setSummary(R.string.screensaver_settings_when_to_dream_bedtime);
+        verify(mockPref).setSummary(R.string.screensaver_unavailable_due_to_mode);
     }
 }

@@ -52,7 +52,15 @@ public class StreamSettingsCategoryController extends BasePreferenceController
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     if (!BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction())) return;
-                    updateVisibility();
+                    if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+                            == BluetoothAdapter.STATE_ON && !isProfileReady()) {
+                        if (mProfileManager != null) {
+                            mProfileManager.addServiceListener(
+                                    StreamSettingsCategoryController.this);
+                        }
+                    } else {
+                        updateVisibility();
+                    }
                 }
             };
 
@@ -91,12 +99,13 @@ public class StreamSettingsCategoryController extends BasePreferenceController
 
     @Override
     public int getAvailabilityStatus() {
-        return BluetoothUtils.isAudioSharingEnabled() ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
+        return BluetoothUtils.isAudioSharingUIAvailable(mContext) ? AVAILABLE
+                : UNSUPPORTED_ON_DEVICE;
     }
 
     @Override
     public void onServiceConnected() {
-        if (isAvailable() && isProfileReady()) {
+        if (isProfileReady()) {
             updateVisibility();
             if (mProfileManager != null) {
                 mProfileManager.removeServiceListener(this);

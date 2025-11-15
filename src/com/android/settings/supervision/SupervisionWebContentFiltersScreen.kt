@@ -1,0 +1,192 @@
+/*
+ * Copyright (C) 2025 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.android.settings.supervision
+
+import android.app.settings.SettingsEnums
+import android.app.supervision.flags.Flags
+import android.content.Context
+import androidx.preference.Preference
+import androidx.preference.PreferenceGroup
+import androidx.preference.PreferenceScreen
+import com.android.settings.CatalystSettingsActivity
+import com.android.settings.R
+import com.android.settings.core.PreferenceScreenMixin
+import com.android.settings.supervision.ipc.SupervisionMessengerClient
+import com.android.settings.supervision.ipc.SupportedApp
+import com.android.settings.utils.makeLaunchIntent
+import com.android.settingslib.metadata.PreferenceCategory
+import com.android.settingslib.metadata.PreferenceLifecycleContext
+import com.android.settingslib.metadata.PreferenceLifecycleProvider
+import com.android.settingslib.metadata.PreferenceMetadata
+import com.android.settingslib.metadata.ProvidePreferenceScreen
+import com.android.settingslib.metadata.preferenceHierarchy
+import com.android.settingslib.preference.forEachRecursively
+import kotlin.text.get
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Activity to display [SupervisionWebContentFiltersScreen]. */
+class SupervisionWebContentFiltersActivity :
+    CatalystSettingsActivity(SupervisionWebContentFiltersScreen.KEY)
+
+/** Web content filters landing page (Settings > Supervision > Web content filters). */
+@ProvidePreferenceScreen(SupervisionWebContentFiltersScreen.KEY)
+open class SupervisionWebContentFiltersScreen : PreferenceScreenMixin, PreferenceLifecycleProvider {
+    private var supervisionClient: SupervisionMessengerClient? = null
+
+    override fun isFlagEnabled(context: Context) = Flags.enableWebContentFiltersScreen()
+
+    override val key: String
+        get() = KEY
+
+    override val title: Int
+        get() = R.string.supervision_web_content_filters_title
+
+    override val keywords: Int
+        get() = R.string.supervision_web_content_filters_keywords
+
+    override val icon: Int
+        get() = R.drawable.ic_globe
+
+    override fun getMetricsCategory() = SettingsEnums.SUPERVISION_WEB_CONTENT_FILTERS
+
+    override val highlightMenuKey: Int
+        get() = R.string.menu_key_supervision
+
+    override fun onCreate(context: PreferenceLifecycleContext) {
+        supervisionClient = getSupervisionClient(context)
+        updatePreferenceData(context)
+        addSupportedApps(context)
+    }
+
+    override fun onDestroy(context: PreferenceLifecycleContext) {
+        supervisionClient?.close()
+    }
+
+    override fun isIndexable(context: Context) = true
+
+    override fun hasCompleteHierarchy() = true
+
+    override fun getPreferenceHierarchy(context: Context, coroutineScope: CoroutineScope) =
+        preferenceHierarchy(context) {
+            +SupervisionWebContentFiltersTopIntroPreference()
+            +PreferenceCategory(
+                BROWSER_FILTERS_GROUP,
+                R.string.supervision_web_content_filters_browser_title,
+            ) +=
+                {
+                    val dataStore = SupervisionSafeSitesDataStore(context)
+                    +SupervisionSafeSitesSwitchPreference(dataStore)
+                }
+            +PreferenceCategory(
+                SEARCH_FILTERS_GROUP,
+                R.string.supervision_web_content_filters_search_title,
+            ) +=
+                {
+                    val dataStore = SupervisionSafeSearchDataStore(context)
+                    +SupervisionSafeSearchSwitchPreference(dataStore)
+                }
+            +SupervisionWebContentFiltersFooterPreference()
+        }
+
+    override fun getLaunchIntent(context: Context, metadata: PreferenceMetadata?) =
+        makeLaunchIntent(context, SupervisionWebContentFiltersActivity::class.java, metadata?.key)
+
+    private fun updatePreferenceData(context: PreferenceLifecycleContext) {
+        val preferenceScreen = context.findPreference<Preference>(key)
+        if (preferenceScreen is PreferenceScreen) {
+            val preferenceKeys =
+                buildList<String> { preferenceScreen.forEachRecursively { add(it.key) } }
+            context.lifecycleScope.launch {
+                val preferenceDataMap =
+                    withContext(Dispatchers.IO) {
+                        supervisionClient?.getPreferenceData(preferenceKeys)
+                    }
+                preferenceScreen.forEachRecursively {
+                    val preferenceData = preferenceDataMap?.get(it.key)
+                    val newTitle = preferenceData?.title
+                    if (newTitle != null) {
+                        it.title = newTitle
+                    }
+                    val newSummary = preferenceData?.summary
+                    if (newSummary != null) {
+                        it.summary = newSummary
+                    }
+                }
+            }
+        }
+    }
+
+    private fun addSupportedApps(context: PreferenceLifecycleContext) {
+        context.lifecycleScope.launch {
+            val supportedAppsMap =
+                withContext(Dispatchers.IO) {
+                    supervisionClient?.getSupportedApps(
+                        listOf(BROWSER_FILTERS_SUPPORTED_APPS, SEARCH_FILTERS_SUPPORTED_APPS)
+                    )
+                }
+
+            createSupportedAppPreference(
+                context,
+                BROWSER_FILTERS_GROUP,
+                BROWSER_FILTERS_SUPPORTED_APPS,
+                supportedAppsMap,
+            )
+            createSupportedAppPreference(
+                context,
+                SEARCH_FILTERS_GROUP,
+                SEARCH_FILTERS_SUPPORTED_APPS,
+                supportedAppsMap,
+            )
+        }
+    }
+
+    private fun createSupportedAppPreference(
+        context: PreferenceLifecycleContext,
+        filterGroup: String,
+        filterType: String,
+        supportedAppsMap: Map<String, List<SupportedApp>>?,
+    ) {
+        val supportedApps = supportedAppsMap?.get(filterType) ?: emptyList()
+        context.findPreference<PreferenceGroup>(filterGroup)?.apply {
+            for (supportedApp in supportedApps) {
+                val packageName = supportedApp.packageName
+                if (packageName != null) {
+                    SupervisionSupportedAppPreference(
+                            supportedApp.title,
+                            supportedApp.summary,
+                            packageName,
+                        )
+                        .createWidget(context)
+                        .let { addPreference(it) }
+                }
+            }
+        }
+    }
+
+    private fun getSupervisionClient(context: Context) =
+        supervisionClient ?: SupervisionMessengerClient(context).also { supervisionClient = it }
+
+    companion object {
+        const val KEY = "supervision_web_content_filters"
+        internal const val BROWSER_FILTERS_GROUP = "browser_filters_group"
+        internal const val BROWSER_FILTERS_SUPPORTED_APPS = "browser_filters_supported_apps"
+        internal const val SEARCH_FILTERS_GROUP = "search_filters_group"
+        internal const val SEARCH_FILTERS_SUPPORTED_APPS = "search_filters_supported_apps"
+    }
+}

@@ -18,39 +18,79 @@ package com.android.settings.inputmethod;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import android.content.Context;
 import android.hardware.input.InputSettings;
 import android.platform.test.annotations.DisableFlags;
 import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
+import androidx.preference.Preference;
+
 import com.android.settings.core.BasePreferenceController;
 import com.android.settings.keyboard.Flags;
+import com.android.settings.testutils.shadow.ShadowAlertDialogCompat;
 
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.Implementation;
+import org.robolectric.annotation.Implements;
 
 @RunWith(RobolectricTestRunner.class)
 @Config(shadows = {
+        KeyboardAccessibilityBounceKeysControllerTest
+                .ShadowKeyboardAccessibilityBounceKeysDialogFragment.class,
         com.android.settings.testutils.shadow.ShadowFragment.class,
+        ShadowAlertDialogCompat.class,
 })
 public class KeyboardAccessibilityBounceKeysControllerTest {
     @Rule
     public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
+    @Rule
+    public MockitoRule mMockitoRule = MockitoJUnit.rule();
+    private static final String PREFERENCE_KEY = "keyboard_a11y_page_bounce_keys";
+    @Mock
+    private Preference mPreference;
+    @Mock
+    private Fragment mFragment;
+    @Mock
+    private FragmentManager mFragmentManager;
+    @Mock
+    private FragmentTransaction mFragmentTransaction;
+    @Mock
+    private KeyboardAccessibilityBounceKeysDialogFragment
+            mKeyboardAccessibilityBounceKeysDialogFragment;
     private Context mContext;
     private KeyboardAccessibilityBounceKeysController mKeyboardAccessibilityBounceKeysController;
 
     @Before
     public void setUp() {
         mContext = RuntimeEnvironment.application;
+        mContext.setTheme(androidx.appcompat.R.style.Theme_AppCompat);
         mKeyboardAccessibilityBounceKeysController = new KeyboardAccessibilityBounceKeysController(
                 mContext,
-                "accessibility_bounce_keys");
+                PREFERENCE_KEY);
+        when(mPreference.getKey()).thenReturn(PREFERENCE_KEY);
+        when(mFragment.getParentFragmentManager()).thenReturn(mFragmentManager);
+        when(mFragmentManager.beginTransaction()).thenReturn(mFragmentTransaction);
+        mKeyboardAccessibilityBounceKeysController.setFragment(mFragment);
+        ShadowKeyboardAccessibilityBounceKeysDialogFragment.setInstance(
+                mKeyboardAccessibilityBounceKeysDialogFragment);
     }
 
     @Test
@@ -81,5 +121,31 @@ public class KeyboardAccessibilityBounceKeysControllerTest {
         boolean isEnabled = InputSettings.isAccessibilityBounceKeysEnabled(mContext);
 
         assertThat(isEnabled).isFalse();
+    }
+
+    @Test
+    public void handlePreferenceTreeClick_dialogShows() {
+        mKeyboardAccessibilityBounceKeysController.handlePreferenceTreeClick(mPreference);
+
+        verify(mKeyboardAccessibilityBounceKeysDialogFragment).show(any(FragmentManager.class),
+                anyString());
+    }
+
+    /**
+     * Note: Actually, shadow of KeyboardAccessibilitySlowKeysDialogFragment will not be used.
+     * Instance that returned with {@link #getInstance} should be set with {@link #setInstance}
+     */
+    @Implements(KeyboardAccessibilityBounceKeysDialogFragment.class)
+    public static class ShadowKeyboardAccessibilityBounceKeysDialogFragment {
+        static KeyboardAccessibilityBounceKeysDialogFragment sInstance = null;
+
+        @Implementation
+        protected static KeyboardAccessibilityBounceKeysDialogFragment getInstance() {
+            return sInstance;
+        }
+
+        public static void setInstance(KeyboardAccessibilityBounceKeysDialogFragment instance) {
+            sInstance = instance;
+        }
     }
 }

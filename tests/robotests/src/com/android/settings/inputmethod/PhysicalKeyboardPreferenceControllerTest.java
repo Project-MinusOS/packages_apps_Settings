@@ -50,7 +50,6 @@ import java.util.List;
 public class PhysicalKeyboardPreferenceControllerTest {
 
     private static final String DEVICE_NAME = "deviceName";
-    private static final String LAYOUT_LABEL = "deviceLayutLabel";
     private static final String BLUETOOTHADDRESS = "deviceBluetoothAddress";
     private static final int VENDOR_ID = 123;
     private static final int PRODUCT_ID = 456;
@@ -85,7 +84,6 @@ public class PhysicalKeyboardPreferenceControllerTest {
         keyboards.add(new HardKeyboardDeviceInfo(
                 DEVICE_NAME,
                 mIdentifier,
-                LAYOUT_LABEL,
                 BLUETOOTHADDRESS,
                 VENDOR_ID,
                 PRODUCT_ID));
@@ -109,7 +107,6 @@ public class PhysicalKeyboardPreferenceControllerTest {
     @Test
     @Config(shadows = ShadowInputDevice.class)
     public void updateState_noKeyboard_setPreferenceVisibleFalse() {
-        ShadowInputDevice.sDeviceIds = new int[0];
         mController.updateState(mPreference);
 
         verify(mPreference).setVisible(false);
@@ -122,7 +119,6 @@ public class PhysicalKeyboardPreferenceControllerTest {
         when(device.isVirtual()).thenReturn(false);
         when(device.isFullKeyboard()).thenReturn(true);
         when(device.getName()).thenReturn("test_keyboard");
-        ShadowInputDevice.sDeviceIds = new int[]{0};
         ShadowInputDevice.addDevice(0, device);
 
         mController.updateState(mPreference);

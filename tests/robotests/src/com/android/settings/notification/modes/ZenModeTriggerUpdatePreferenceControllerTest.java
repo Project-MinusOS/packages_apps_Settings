@@ -34,16 +34,16 @@ import static org.mockito.Mockito.when;
 import static org.robolectric.Shadows.shadowOf;
 
 import android.app.AlertDialog;
-import android.app.Flags;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.Looper;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.service.notification.SystemZenRules;
 import android.service.notification.ZenModeConfig;
+import android.text.Spanned;
+import android.text.style.TtsSpan;
 import android.widget.TextView;
 
 import androidx.preference.PreferenceManager;
@@ -71,7 +71,6 @@ import org.robolectric.shadows.ShadowAlertDialog;
 import java.util.Calendar;
 
 @RunWith(RobolectricTestRunner.class)
-@EnableFlags(Flags.FLAG_MODES_UI)
 public class ZenModeTriggerUpdatePreferenceControllerTest {
     @Rule
     public final SetFlagsRule mSetFlagsRule = new SetFlagsRule(DEVICE_DEFAULT);
@@ -146,7 +145,7 @@ public class ZenModeTriggerUpdatePreferenceControllerTest {
 
     @Test
     public void isAvailable_manualDND_false() {
-        mController.setZenMode(TestModeBuilder.MANUAL_DND_INACTIVE);
+        mController.setZenMode(TestModeBuilder.MANUAL_DND);
         assertThat(mController.isAvailable()).isFalse();
     }
 
@@ -159,7 +158,7 @@ public class ZenModeTriggerUpdatePreferenceControllerTest {
         assertThat(mPreference.getCheckedState()).isFalse();
 
         // Now with the rule enabled
-        zenMode.getRule().setEnabled(true);
+        zenMode.setEnabled(true);
         mController.updateZenMode(mPreference, zenMode);
         assertThat(mPreference.getCheckedState()).isTrue();
     }
@@ -187,7 +186,7 @@ public class ZenModeTriggerUpdatePreferenceControllerTest {
         // Verify the backend got asked to update the mode to be enabled
         ArgumentCaptor<ZenMode> captor = ArgumentCaptor.forClass(ZenMode.class);
         verify(mBackend).updateMode(captor.capture());
-        assertThat(captor.getValue().getRule().isEnabled()).isTrue();
+        assertThat(captor.getValue().isEnabled()).isTrue();
         assertThat(ShadowAlertDialog.getLatestAlertDialog().isShowing()).isFalse();
     }
 
@@ -214,7 +213,7 @@ public class ZenModeTriggerUpdatePreferenceControllerTest {
         // Verify the backend got asked to update the mode to be disabled
         ArgumentCaptor<ZenMode> captor = ArgumentCaptor.forClass(ZenMode.class);
         verify(mBackend).updateMode(captor.capture());
-        assertThat(captor.getValue().getRule().isEnabled()).isFalse();
+        assertThat(captor.getValue().isEnabled()).isFalse();
         assertThat(ShadowAlertDialog.getLatestAlertDialog().isShowing()).isFalse();
     }
 
@@ -293,11 +292,37 @@ public class ZenModeTriggerUpdatePreferenceControllerTest {
 
         assertThat(mPreference.isVisible()).isTrue();
         assertThat(mPreference.getTitle()).isEqualTo("1:00 AM - 3:00 PM");
-        assertThat(mPreference.getSummary()).isEqualTo("Mon - Tue, Thu");
+        Spanned summary = (Spanned) mPreference.getSummary();
+        assertThat(summary.toString()).isEqualTo("Mon - Tue, Thu");
+        TtsSpan[] ttsSpans = summary.getSpans(0, summary.length(), TtsSpan.class);
+        assertThat(ttsSpans).hasLength(1);
+        assertThat(ttsSpans[0].getType()).isEqualTo(TtsSpan.TYPE_TEXT);
+        assertThat(ttsSpans[0].getArgs().getString(TtsSpan.ARG_TEXT)).isEqualTo(
+                "Monday to Tuesday, Thursday");
+
         // Destination as written into the intent by SubSettingLauncher
         assertThat(
                 mPreference.getIntent().getStringExtra(SettingsActivity.EXTRA_SHOW_FRAGMENT))
                 .isEqualTo(ZenModeSetScheduleFragment.class.getName());
+    }
+
+    @Test
+    public void updateState_scheduleTimeRuleWithNoDays_emptySummary() {
+        ZenModeConfig.ScheduleInfo scheduleInfo = new ZenModeConfig.ScheduleInfo();
+        scheduleInfo.days = new int[] {};
+        scheduleInfo.startHour = 1;
+        scheduleInfo.endHour = 15;
+        ZenMode mode = new TestModeBuilder()
+                .setConditionId(ZenModeConfig.toScheduleConditionId(scheduleInfo))
+                .setPackage(SystemZenRules.PACKAGE_ANDROID)
+                .setType(TYPE_SCHEDULE_TIME)
+                .setTriggerDescription("some schedule")
+                .build();
+
+        mController.updateState(mPreference, mode);
+
+        assertThat(mPreference.getTitle()).isEqualTo("1:00 AM - 3:00 PM");
+        assertThat(mPreference.getSummary()).isNull();
     }
 
     @Test

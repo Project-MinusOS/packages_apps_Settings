@@ -19,6 +19,9 @@ package com.android.settings.gestures;
 import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.provider.SearchIndexableResource;
+
+import androidx.annotation.NonNull;
 
 import com.android.settings.R;
 import com.android.settings.dashboard.DashboardFragment;
@@ -27,6 +30,8 @@ import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settingslib.search.SearchIndexable;
 
+import java.util.List;
+
 @SearchIndexable
 public class DoubleTapPowerSettings extends DashboardFragment {
 
@@ -34,9 +39,11 @@ public class DoubleTapPowerSettings extends DashboardFragment {
 
     public static final String PREF_KEY_SUGGESTION_COMPLETE =
             "pref_double_tap_power_suggestion_complete";
+    private Context mContext;
 
     @Override
     public void onAttach(Context context) {
+        mContext = context;
         super.onAttach(context);
         SuggestionFeatureProvider suggestionFeatureProvider =
                 FeatureFactory.getFeatureFactory().getSuggestionFeatureProvider();
@@ -56,9 +63,28 @@ public class DoubleTapPowerSettings extends DashboardFragment {
 
     @Override
     protected int getPreferenceScreenResId() {
-        return R.xml.double_tap_power_settings;
+        return getDoubleTapPowerSettingsResId(mContext);
+    }
+
+    private static int getDoubleTapPowerSettingsResId(Context context) {
+        if (!android.service.quickaccesswallet.Flags.launchWalletOptionOnPowerDoubleTap()) {
+            return R.xml.double_tap_power_to_open_camera_settings;
+        }
+        return DoubleTapPowerSettingsUtils
+                .isMultiTargetDoubleTapPowerButtonGestureAvailable(context)
+                ? R.xml.double_tap_power_settings
+                : R.xml.double_tap_power_to_open_camera_settings;
     }
 
     public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
-            new BaseSearchIndexProvider(R.xml.double_tap_power_settings);
+            new BaseSearchIndexProvider() {
+                @Override
+                @NonNull
+                public List<SearchIndexableResource> getXmlResourcesToIndex(
+                        @NonNull Context context, boolean enabled) {
+                    final SearchIndexableResource sir = new SearchIndexableResource(context);
+                    sir.xmlResId = getDoubleTapPowerSettingsResId(context);
+                    return List.of(sir);
+                }
+            };
 }

@@ -29,18 +29,13 @@ import static com.google.common.truth.Truth.assertThat;
 
 import static org.robolectric.Shadows.shadowOf;
 
-import android.app.AutomaticZenRule;
-import android.app.Flags;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.UserInfo;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
-import android.service.notification.SystemZenRules;
 import android.service.notification.ZenDeviceEffects;
-import android.service.notification.ZenModeConfig;
 import android.service.notification.ZenPolicy;
 
 import com.android.settingslib.applications.ApplicationsState.AppEntry;
@@ -60,7 +55,6 @@ import org.robolectric.RuntimeEnvironment;
 import java.util.Random;
 
 @RunWith(RobolectricTestRunner.class)
-@EnableFlags(Flags.FLAG_MODES_UI)
 public class ZenModeSummaryHelperTest {
     private static final int WORK_PROFILE_ID = 3;
 
@@ -476,48 +470,75 @@ public class ZenModeSummaryHelperTest {
     }
 
     @Test
-    public void getModesSummary_noRules_noSummary() {
+    public void getModesSummary_noModesWtf_fallbackSummary() {
         String summary = mSummaryHelper.getModesSummary(ImmutableList.of());
-        assertThat(summary).isEmpty();
+        assertThat(summary).isEqualTo("Do Not Disturb");
     }
 
     @Test
-    public void getModesSummary_onlyDndAndNotActive_noSummary() {
-        ImmutableList<ZenMode> modes = ImmutableList.of(TestModeBuilder.MANUAL_DND_INACTIVE);
-        String summary = mSummaryHelper.getModesSummary(modes);
-        assertThat(summary).isEmpty();
-    }
-
-    @Test
-    public void getModesSummary_noRulesActive_countsOnlyEnabledAutomaticModes() {
+    public void getModesSummary_oneMode_listsMode() {
         ImmutableList<ZenMode> modes = ImmutableList.of(
-                TestModeBuilder.MANUAL_DND_INACTIVE, // Not automatic
-                new TestModeBuilder().setName("Auto 1").build(), // App provided automatic
-                new TestModeBuilder()
-                        .setName("Custom manual 1")
-                        .setPackage(SystemZenRules.PACKAGE_ANDROID)
-                        .setType(AutomaticZenRule.TYPE_OTHER)
-                        .setConditionId(ZenModeConfig.toCustomManualConditionId())
-                        .build(), // Custom manual, not automatic
-                new TestModeBuilder()
-                        .setName("Disabled 1")
-                        .setEnabled(false)
-                        .build(), // Would be automatic, but it's disabled.
-                new TestModeBuilder()
-                        .setName("Sleep")
-                        .setPackage(SystemZenRules.PACKAGE_ANDROID)
-                        .setType(AutomaticZenRule.TYPE_SCHEDULE_TIME)
-                        .build() // Time based, automatic.
+                new TestModeBuilder().setName("Surfing").build()
         );
 
         String summary = mSummaryHelper.getModesSummary(modes);
-        assertThat(summary).isEqualTo("2 modes can turn on automatically");
+        assertThat(summary).isEqualTo("Surfing");
     }
 
     @Test
-    public void getModesSummary_oneModeActive_listsMode() {
+    public void getModesSummary_twoModes_listsModes() {
         ImmutableList<ZenMode> modes = ImmutableList.of(
-                TestModeBuilder.MANUAL_DND_ACTIVE,
+                new TestModeBuilder().setName("Cartwheeling").build(),
+                new TestModeBuilder().setName("Hula-hooping").build()
+        );
+
+        String summary = mSummaryHelper.getModesSummary(modes);
+        assertThat(summary).isEqualTo("Cartwheeling, Hula-hooping");
+    }
+
+    @Test
+    public void getModesSummary_threeModes_listsModes() {
+        ImmutableList<ZenMode> modes = ImmutableList.of(
+                new TestModeBuilder().setName("Prancing").build(),
+                new TestModeBuilder().setName("Hopping").build(),
+                new TestModeBuilder().setName("Skipping").build()
+        );
+
+        String summary = mSummaryHelper.getModesSummary(modes);
+        assertThat(summary).isEqualTo("Prancing, Hopping, Skipping");
+    }
+
+    @Test
+    public void getModesSummary_manyModes_listsThreeModes() {
+        ImmutableList<ZenMode> modes = ImmutableList.of(
+                new TestModeBuilder().setName("Juggling").build(),
+                new TestModeBuilder().setName("Rhyming").build(),
+                new TestModeBuilder().setName("Meandering").build(),
+                new TestModeBuilder().setName("Doodling").build(),
+                new TestModeBuilder().setName("Whistling").build(),
+                new TestModeBuilder().setName("Lounging").build()
+        );
+
+        String summary = mSummaryHelper.getModesSummary(modes);
+        assertThat(summary).isEqualTo("Juggling, Rhyming, Meandering");
+    }
+
+    @Test
+    public void getModesSummary_excludesImplicitModes() {
+        ImmutableList<ZenMode> modes = ImmutableList.of(
+                TestModeBuilder.MANUAL_DND,
+                new TestModeBuilder().implicitForPackage("com.annoying.one").build(),
+                new TestModeBuilder().setName("Chirping").build()
+        );
+
+        String summary = mSummaryHelper.getModesSummary(modes);
+        assertThat(summary).isEqualTo("Do Not Disturb, Chirping");
+    }
+
+    @Test
+    public void getModesSummary_oneModeActive_listsActiveMode() {
+        ImmutableList<ZenMode> modes = ImmutableList.of(
+                new TestModeBuilder().makeManualDnd().setActive(true).build(),
                 new TestModeBuilder().setName("Inactive").setActive(false).build());
 
         String summary = mSummaryHelper.getModesSummary(modes);
@@ -525,9 +546,9 @@ public class ZenModeSummaryHelperTest {
     }
 
     @Test
-    public void getModesSummary_twoModesActive_listsModes() {
+    public void getModesSummary_twoModesActive_listsActiveModes() {
         ImmutableList<ZenMode> modes = ImmutableList.of(
-                TestModeBuilder.MANUAL_DND_ACTIVE,
+                new TestModeBuilder().makeManualDnd().setActive(true).build(),
                 new TestModeBuilder().setName("Inactive").setActive(false).build(),
                 new TestModeBuilder().setName("Active #1").setActive(true).build());
 
@@ -536,9 +557,9 @@ public class ZenModeSummaryHelperTest {
     }
 
     @Test
-    public void getModesSummary_threeModesActive_listsModes() {
+    public void getModesSummary_threeModesActive_listsActiveModes() {
         ImmutableList<ZenMode> modes = ImmutableList.of(
-                TestModeBuilder.MANUAL_DND_INACTIVE,
+                TestModeBuilder.MANUAL_DND,
                 new TestModeBuilder().setName("Inactive #1").setActive(false).build(),
                 new TestModeBuilder().setName("Active #1").setActive(true).build(),
                 new TestModeBuilder().setName("Active #2").setActive(true).build(),
@@ -550,9 +571,9 @@ public class ZenModeSummaryHelperTest {
     }
 
     @Test
-    public void getModesSummary_manyModesActive_listsACouple() {
+    public void getModesSummary_manyModesActive_listsSomeActiveModes() {
         ImmutableList<ZenMode> modes = ImmutableList.of(
-                TestModeBuilder.MANUAL_DND_ACTIVE,
+                new TestModeBuilder().makeManualDnd().setActive(true).build(),
                 new TestModeBuilder().setName("Inactive #1").setActive(false).build(),
                 new TestModeBuilder().setName("Active #1").setActive(true).build(),
                 new TestModeBuilder().setName("Active #2").setActive(true).build(),

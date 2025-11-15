@@ -20,8 +20,6 @@ import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.graphics.Bitmap
 import androidx.test.core.app.ApplicationProvider
-import com.android.settings.bluetooth.domain.interactor.SpatialAudioInteractor
-import com.android.settings.bluetooth.ui.layout.DeviceSettingLayout
 import com.android.settings.bluetooth.ui.model.DeviceSettingPreferenceModel
 import com.android.settings.bluetooth.ui.model.FragmentTypeModel
 import com.android.settings.testutils.FakeFeatureFactory
@@ -46,7 +44,9 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mock
+import org.mockito.Mockito.any
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
@@ -65,8 +65,6 @@ class BluetoothDeviceDetailsViewModelTest {
 
     @Mock private lateinit var repository: DeviceSettingRepository
 
-    @Mock private lateinit var spatialAudioInteractor: SpatialAudioInteractor
-
     private lateinit var underTest: BluetoothDeviceDetailsViewModel
     private lateinit var featureFactory: FakeFeatureFactory
     private val testScope = TestScope()
@@ -76,11 +74,15 @@ class BluetoothDeviceDetailsViewModelTest {
         val application = ApplicationProvider.getApplicationContext<Application>()
         featureFactory = FakeFeatureFactory.setupForTest()
 
+        `when`(
+            featureFactory.bluetoothFeatureProvider.getDeviceSettingRepository(
+                eq(application), any()
+            ))
+            .thenReturn(repository)
+
         underTest =
             BluetoothDeviceDetailsViewModel(
                 application,
-                repository,
-                spatialAudioInteractor,
                 cachedDevice,
                 testScope.testScheduler)
     }
@@ -158,104 +160,6 @@ class BluetoothDeviceDetailsViewModelTest {
             assertThat(deviceSettingPreference?.id).isEqualTo(pref.id)
             verify(repository, times(1)).getDeviceSetting(cachedDevice, remoteSettingId1)
         }
-    }
-
-    @Test
-    fun getDeviceSetting_spatialAudio_returnSpatialAudioInteractorResponse() {
-        testScope.runTest {
-            val pref =
-                buildMultiTogglePreference(
-                    DeviceSettingId.DEVICE_SETTING_ID_SPATIAL_AUDIO_MULTI_TOGGLE)
-            `when`(repository.getDeviceSettingsConfig(cachedDevice))
-                .thenReturn(
-                    DeviceSettingConfigModel(
-                        listOf(
-                            BUILTIN_SETTING_ITEM_1,
-                            buildRemoteSettingItem(
-                                DeviceSettingId.DEVICE_SETTING_ID_SPATIAL_AUDIO_MULTI_TOGGLE),
-                        ),
-                        listOf(),
-                        null))
-            `when`(spatialAudioInteractor.getDeviceSetting(cachedDevice)).thenReturn(flowOf(pref))
-
-            var deviceSettingPreference: DeviceSettingPreferenceModel? = null
-            underTest
-                .getDeviceSetting(
-                    cachedDevice, DeviceSettingId.DEVICE_SETTING_ID_SPATIAL_AUDIO_MULTI_TOGGLE)
-                .onEach { deviceSettingPreference = it }
-                .launchIn(testScope.backgroundScope)
-            runCurrent()
-
-            assertThat(deviceSettingPreference?.id).isEqualTo(pref.id)
-            verify(spatialAudioInteractor, times(1)).getDeviceSetting(cachedDevice)
-        }
-    }
-
-    @Test
-    fun getLayout_builtinDeviceSettings() {
-        testScope.runTest {
-            `when`(repository.getDeviceSettingsConfig(cachedDevice))
-                .thenReturn(
-                    DeviceSettingConfigModel(
-                        listOf(BUILTIN_SETTING_ITEM_1, BUILDIN_SETTING_ITEM_2), listOf(), null))
-
-            val layout = underTest.getLayout(FragmentTypeModel.DeviceDetailsMainFragment)!!
-
-            assertThat(getLatestLayout(layout))
-                .isEqualTo(
-                    listOf(
-                        listOf(DeviceSettingId.DEVICE_SETTING_ID_HEADER),
-                        listOf(DeviceSettingId.DEVICE_SETTING_ID_ACTION_BUTTONS)))
-        }
-    }
-
-    @Test
-    fun getLayout_remoteDeviceSettings() {
-        val remoteSettingId1 = 10001
-        val remoteSettingId2 = 10002
-        val remoteSettingId3 = 10003
-        testScope.runTest {
-            `when`(repository.getDeviceSettingsConfig(cachedDevice))
-                .thenReturn(
-                    DeviceSettingConfigModel(
-                        listOf(
-                            BUILTIN_SETTING_ITEM_1,
-                            buildRemoteSettingItem(remoteSettingId1),
-                            buildRemoteSettingItem(remoteSettingId2),
-                            buildRemoteSettingItem(remoteSettingId3),
-                        ),
-                        listOf(),
-                        null))
-            `when`(repository.getDeviceSetting(cachedDevice, remoteSettingId1))
-                .thenReturn(flowOf(buildMultiTogglePreference(remoteSettingId1)))
-            `when`(repository.getDeviceSetting(cachedDevice, remoteSettingId2))
-                .thenReturn(flowOf(buildMultiTogglePreference(remoteSettingId2)))
-            `when`(repository.getDeviceSetting(cachedDevice, remoteSettingId3))
-                .thenReturn(flowOf(buildActionSwitchPreference(remoteSettingId3)))
-
-            val layout = underTest.getLayout(FragmentTypeModel.DeviceDetailsMainFragment)!!
-
-            assertThat(getLatestLayout(layout))
-                .isEqualTo(
-                    listOf(
-                        listOf(DeviceSettingId.DEVICE_SETTING_ID_HEADER),
-                        listOf(remoteSettingId1, remoteSettingId2),
-                        listOf(remoteSettingId3),
-                    ))
-        }
-    }
-
-    private fun getLatestLayout(layout: DeviceSettingLayout): List<List<Int>> {
-        val latestLayout = MutableList(layout.rows.size) { emptyList<Int>() }
-        for (i in layout.rows.indices) {
-            layout.rows[i]
-                .columns
-                .onEach { latestLayout[i] = it.map { c -> c.settingId } }
-                .launchIn(testScope.backgroundScope)
-        }
-
-        testScope.runCurrent()
-        return latestLayout.filter { !it.isEmpty() }.toList()
     }
 
     private fun buildMultiTogglePreference(settingId: Int) =

@@ -18,7 +18,10 @@ package com.android.settings.display;
 
 import static android.app.admin.DevicePolicyResources.Strings.Settings.OTHER_OPTIONS_DISABLED_BY_ADMIN;
 import static android.hardware.SensorPrivacyManager.Sensors.CAMERA;
+import static android.provider.Settings.Secure.CONTEXTUAL_SCREEN_TIMEOUT_ENABLED;
 import static android.provider.Settings.System.SCREEN_OFF_TIMEOUT;
+
+import static com.android.settings.display.UtilsKt.isAdaptiveSleepSupported;
 
 import android.app.admin.DevicePolicyManager;
 import android.app.settings.SettingsEnums;
@@ -34,7 +37,9 @@ import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
@@ -65,6 +70,8 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         implements HelpResourceProvider {
     private static final String TAG = "ScreenTimeout";
 
+    private static final String KEY_ADAPTIVE_TIMEOUT = CONTEXTUAL_SCREEN_TIMEOUT_ENABLED;
+
     /** If there is no setting in the provider, use this. */
     public static final int FALLBACK_SCREEN_TIMEOUT_VALUE = 30000;
 
@@ -80,7 +87,9 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
                 @Override
                 public void onReceive(Context context, Intent intent) {
                     mAdaptiveSleepBatterySaverPreferenceController.updateVisibility();
-                    mAdaptiveSleepController.updatePreference();
+                    if (!isCatalystEnabled()) {
+                        mAdaptiveSleepController.updatePreference();
+                    }
                 }
             };
 
@@ -121,9 +130,6 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         super.onAttach(context);
         mContext = context;
         mDevicePolicyManager = mContext.getSystemService(DevicePolicyManager.class);
-        mInitialEntries = getResources().getStringArray(R.array.screen_timeout_entries);
-        mInitialValues = getResources().getStringArray(R.array.screen_timeout_values);
-        mAdaptiveSleepController = new AdaptiveSleepPreferenceController(context);
         mAdaptiveSleepPermissionController =
                 new AdaptiveSleepPermissionPreferenceController(context);
         mAdaptiveSleepCameraStatePreferenceController =
@@ -136,18 +142,28 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         mPrivacyPreference.setSelectable(false);
         mPrivacyPreference.setLayoutResource(
                 com.android.settingslib.widget.preference.footer.R.layout.preference_footer);
-        mPrivacyManager = SensorPrivacyManager.getInstance(context);
-        mPrivacyChangedListener = (sensor, enabled) -> mAdaptiveSleepController.updatePreference();
-        mAdditionalTogglePreferenceController = FeatureFactory.getFeatureFactory()
-                .getDisplayFeatureProvider().createAdditionalPreference(context);
+        if (!isCatalystEnabled()) {
+            mPrivacyManager = SensorPrivacyManager.getInstance(context);
+            mAdaptiveSleepController = new AdaptiveSleepPreferenceController(context);
+            mPrivacyChangedListener =
+                    (sensor, enabled) -> mAdaptiveSleepController.updatePreference();
+        }
+        if (!isCatalystScreenTimeoutQ3Enabled()) {
+            mAdditionalTogglePreferenceController = FeatureFactory.getFeatureFactory()
+                    .getDisplayFeatureProvider().createAdditionalPreference(context);
+        }
     }
 
     @Override
     protected List<? extends CandidateInfo> getCandidates() {
+        mInitialEntries = getResources().getStringArray(R.array.screen_timeout_entries);
+        mInitialValues = getResources().getStringArray(R.array.screen_timeout_values);
+
         final List<CandidateInfo> candidates = new ArrayList<>();
         final long maxTimeout = getMaxScreenTimeout(getContext());
         if (mInitialValues != null) {
             for (int i = 0; i < mInitialValues.length; ++i) {
+                // Truncate mInitialEntries/Values so that they do not exceed maxTimeout
                 if (Long.parseLong(mInitialValues[i].toString()) <= maxTimeout) {
                     candidates.add(
                             new TimeoutCandidateInfo(
@@ -166,26 +182,36 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         mAdaptiveSleepPermissionController.updateVisibility();
         mAdaptiveSleepCameraStatePreferenceController.updateVisibility();
         mAdaptiveSleepBatterySaverPreferenceController.updateVisibility();
-        mAdaptiveSleepController.updatePreference();
         mContext.registerReceiver(
                 mReceiver, new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED));
-        mPrivacyManager.addSensorPrivacyListener(CAMERA, mPrivacyChangedListener);
+        if (!isCatalystEnabled()) {
+            mAdaptiveSleepController.updatePreference();
+            mPrivacyManager.addSensorPrivacyListener(CAMERA, mPrivacyChangedListener);
+        }
         mIsUserAuthenticated = false;
-        FeatureFactory.getFeatureFactory().getDisplayFeatureProvider().updatePreference(
-                mAdditionalTogglePreferenceController);
+        if (!isCatalystScreenTimeoutQ3Enabled()) {
+            FeatureFactory.getFeatureFactory().getDisplayFeatureProvider().updatePreference(
+                    mAdditionalTogglePreferenceController);
+        }
     }
 
     @Override
     public void onStop() {
         super.onStop();
         mContext.unregisterReceiver(mReceiver);
-        mPrivacyManager.removeSensorPrivacyListener(CAMERA, mPrivacyChangedListener);
+        if (!isCatalystEnabled()) {
+            mPrivacyManager.removeSensorPrivacyListener(CAMERA, mPrivacyChangedListener);
+        }
     }
 
     @Override
     public void updateCandidates() {
         final String defaultKey = getDefaultKey();
         final PreferenceScreen screen = getPreferenceScreen();
+        // Adaptive sleep preference is added to the screen when catalyst is enabled
+        Preference adaptiveSleepPreference = screen.findPreference(AdaptiveSleepPreference.KEY);
+        Preference adaptiveTimeoutPreference = screen.findPreference(KEY_ADAPTIVE_TIMEOUT);
+
         screen.removeAll();
 
         final List<? extends CandidateInfo> candidateList = getCandidates();
@@ -196,7 +222,7 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         for (CandidateInfo info : candidateList) {
             ProtectedSelectorWithWidgetPreference pref =
                     new ProtectedSelectorWithWidgetPreference(
-                            getPrefContext(), info.getKey(), this);
+                            getContext(), info.getKey(), this);
             bindPreference(pref, info.getKey(), info, defaultKey);
             screen.addPreference(pref);
         }
@@ -204,12 +230,17 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         final long selectedTimeout = getTimeoutFromKey(defaultKey);
         final long maxTimeout = getMaxScreenTimeout(getContext());
         if (!candidateList.isEmpty() && (selectedTimeout > maxTimeout)) {
-            // The selected time out value is longer than the max timeout allowed by the admin.
-            // Select the largest value from the list by default.
+            // The selected time out value is longer than the max timeout allowed by the
+            // admin/configuration. The list of candidates is already truncated so that
+            // no value exceeds the max timeout value.
+            // Select the largest value from the candidates list by default.
+            int lastIndex = candidateList.size() - 1;
             final ProtectedSelectorWithWidgetPreference preferenceWithLargestTimeout =
                     (ProtectedSelectorWithWidgetPreference)
-                            screen.getPreference(candidateList.size() - 1);
+                            screen.getPreference(lastIndex);
             preferenceWithLargestTimeout.setChecked(true);
+            // Update the system screen timeout setting to match the UI
+            setCurrentSystemScreenTimeout(getContext(), candidateList.get(lastIndex).getKey());
         }
 
         mPrivacyPreference = new FooterPreference(mContext);
@@ -219,13 +250,24 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         mPrivacyPreference.setLayoutResource(
                 com.android.settingslib.widget.preference.footer.R.layout.preference_footer);
 
-        FeatureFactory.getFeatureFactory().getDisplayFeatureProvider()
-                .addToScreen(mAdditionalTogglePreferenceController, screen);
+        if (isCatalystScreenTimeoutQ3Enabled() && adaptiveTimeoutPreference  != null) {
+            adaptiveTimeoutPreference.setOrder(Preference.DEFAULT_ORDER);
+            screen.addPreference(adaptiveTimeoutPreference);
+        } else {
+            FeatureFactory.getFeatureFactory().getDisplayFeatureProvider()
+                    .addToScreen(mAdditionalTogglePreferenceController, screen);
+        }
 
-        if (isScreenAttentionAvailable(getContext())) {
+        if (isAdaptiveSleepSupported(getContext())) {
             mAdaptiveSleepPermissionController.addToScreen(screen);
             mAdaptiveSleepCameraStatePreferenceController.addToScreen(screen);
-            mAdaptiveSleepController.addToScreen(screen);
+            if (adaptiveSleepPreference != null) {
+                // reset order for appending
+                adaptiveSleepPreference.setOrder(Preference.DEFAULT_ORDER);
+                screen.addPreference(adaptiveSleepPreference);
+            } else {
+                mAdaptiveSleepController.addToScreen(screen);
+            }
             mAdaptiveSleepBatterySaverPreferenceController.addToScreen(screen);
             screen.addPreference(mPrivacyPreference);
         }
@@ -308,11 +350,20 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
     }
 
     @Override
+    public @Nullable String getPreferenceScreenBindingKey(@NonNull Context context) {
+        return ScreenTimeoutScreen.KEY;
+    }
+
+    @Override
     public int getHelpResource() {
         return R.string.help_url_adaptive_sleep;
     }
 
+    // Get the maximum screen timeout as governed by admin and/or configuration.
+    // Returns the lowest timeout (admin/config) or Long.MAX_VALUE.
     private Long getMaxScreenTimeout(Context context) {
+        Long adminMaxTimeout = Long.MAX_VALUE;
+        Long configMaxTimeout = Long.MAX_VALUE;
         if (context == null) {
             return Long.MAX_VALUE;
         }
@@ -320,11 +371,21 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         if (dpm == null) {
             return Long.MAX_VALUE;
         }
-        mAdmin = RestrictedLockUtilsInternal.checkIfMaximumTimeToLockIsSet(context);
-        if (mAdmin != null) {
-            return dpm.getMaximumTimeToLock(null /* admin */, UserHandle.myUserId());
+        if (mAdmin == null) { // Don't overwrite mocked mAdmin
+            mAdmin = RestrictedLockUtilsInternal.checkIfMaximumTimeToLockIsSet(context);
         }
-        return Long.MAX_VALUE;
+        if (mAdmin != null) {
+            // Get the admin max screen timeout
+            adminMaxTimeout = dpm.getMaximumTimeToLock(null /* admin */, UserHandle.myUserId());
+        }
+        try {
+            // Get the configurable max screen timeout
+            configMaxTimeout = Long.valueOf(
+                    context.getResources().getInteger(R.integer.config_max_screen_timeout));
+        } catch (Resources.NotFoundException e) {
+            // Do nothing
+        }
+        return Math.min(adminMaxTimeout, configMaxTimeout);
     }
 
     private String getCurrentSystemScreenTimeout(Context context) {
@@ -352,8 +413,8 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
         }
     }
 
-    private static boolean isScreenAttentionAvailable(Context context) {
-        return AdaptiveSleepPreferenceController.isAdaptiveSleepSupported(context);
+    private boolean isCatalystScreenTimeoutQ3Enabled() {
+        return isCatalystEnabled() && Flags.catalystScreenTimeout25q3();
     }
 
     private static long getTimeoutFromKey(String key) {
@@ -403,8 +464,7 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
 
         @Override
         public void onClick() {
-            if (Flags.protectScreenTimeoutWithAuth()
-                    && !mScreenTimeoutSettings.isUserAuthenticated()
+            if (!mScreenTimeoutSettings.isUserAuthenticated()
                     && !isChecked()
                     && mTimeoutMs > getTimeoutFromKey(mScreenTimeoutSettings.getDefaultKey())) {
                 WifiDppUtils.showLockScreen(
@@ -423,7 +483,7 @@ public class ScreenTimeoutSettings extends RadioButtonPickerFragment
             new BaseSearchIndexProvider(R.xml.screen_timeout_settings) {
                 public List<SearchIndexableRaw> getRawDataToIndex(
                         Context context, boolean enabled) {
-                    if (!isScreenAttentionAvailable(context)) {
+                    if (!isAdaptiveSleepSupported(context)) {
                         return null;
                     }
                     final Resources res = context.getResources();

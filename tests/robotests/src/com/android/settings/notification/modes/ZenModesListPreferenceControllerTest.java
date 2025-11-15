@@ -18,18 +18,15 @@ package com.android.settings.notification.modes;
 
 import static android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY;
 
-import static com.android.settingslib.notification.modes.TestModeBuilder.MANUAL_DND_INACTIVE;
+import static com.android.settingslib.notification.modes.TestModeBuilder.MANUAL_DND;
 
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.Mockito.when;
 
 import android.app.AutomaticZenRule;
-import android.app.Flags;
 import android.content.Context;
 import android.net.Uri;
-import android.platform.test.annotations.DisableFlags;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.service.notification.ZenPolicy;
 
@@ -102,7 +99,6 @@ public class ZenModesListPreferenceControllerTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_MODES_UI)
     public void updateState_addsPreferences() {
         ImmutableList<ZenMode> modes = ImmutableList.of(newMode("One"), newMode("Two"),
                 newMode("Three"), newMode("Four"), newMode("Five"));
@@ -118,7 +114,6 @@ public class ZenModesListPreferenceControllerTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_MODES_UI)
     public void updateState_secondTime_updatesPreferences() {
         ImmutableList<ZenMode> modes = ImmutableList.of(newMode("One"), newMode("Two"),
                 newMode("Three"), newMode("Four"), newMode("Five"));
@@ -147,19 +142,6 @@ public class ZenModesListPreferenceControllerTest {
     }
 
     @Test
-    @DisableFlags(Flags.FLAG_MODES_UI)
-    public void testModesUiOff_notAvailableAndNoSearchData() {
-        // There exist modes
-        when(mBackend.getModes()).thenReturn(List.of(MANUAL_DND_INACTIVE, TEST_MODE));
-
-        assertThat(mPrefController.isAvailable()).isFalse();
-        List<SearchIndexableRaw> data = new ArrayList<>();
-        mPrefController.updateDynamicRawDataToIndex(data);
-        assertThat(data).isEmpty();  // despite existence of modes
-    }
-
-    @Test
-    @EnableFlags(Flags.FLAG_MODES_UI)
     public void testUpdateDynamicRawDataToIndex_empty() {
         // Case of no modes.
         when(mBackend.getModes()).thenReturn(new ArrayList<>());
@@ -170,7 +152,6 @@ public class ZenModesListPreferenceControllerTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_MODES_UI)
     public void testUpdateDynamicRawDataToIndex_oneMode() {
         // One mode present, confirm it's the correct one
         when(mBackend.getModes()).thenReturn(List.of(TEST_MODE));
@@ -185,20 +166,19 @@ public class ZenModesListPreferenceControllerTest {
 
         // Changing mode data so there's a different one mode doesn't keep any previous data
         // (and setting that state up in the caller)
-        when(mBackend.getModes()).thenReturn(List.of(MANUAL_DND_INACTIVE));
+        when(mBackend.getModes()).thenReturn(List.of(MANUAL_DND));
         List<SearchIndexableRaw> newData = new ArrayList<>();
         mPrefController.updateDynamicRawDataToIndex(newData);
         assertThat(newData).hasSize(1);
 
         SearchIndexableRaw newItem = newData.get(0);
-        assertThat(newItem.key).isEqualTo(MANUAL_DND_INACTIVE.getId());
+        assertThat(newItem.key).isEqualTo(MANUAL_DND.getId());
         assertThat(newItem.title).isEqualTo("Do Not Disturb");  // set above
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_MODES_UI)
     public void testUpdateDynamicRawDataToIndex_multipleModes() {
-        when(mBackend.getModes()).thenReturn(List.of(MANUAL_DND_INACTIVE, TEST_MODE));
+        when(mBackend.getModes()).thenReturn(List.of(MANUAL_DND, TEST_MODE));
 
         List<SearchIndexableRaw> data = new ArrayList<>();
         mPrefController.updateDynamicRawDataToIndex(data);
@@ -206,7 +186,7 @@ public class ZenModesListPreferenceControllerTest {
 
         // Should keep the order presented by getModes()
         SearchIndexableRaw item0 = data.get(0);
-        assertThat(item0.key).isEqualTo(MANUAL_DND_INACTIVE.getId());
+        assertThat(item0.key).isEqualTo(MANUAL_DND.getId());
         assertThat(item0.title).isEqualTo("Do Not Disturb");  // set above
 
         SearchIndexableRaw item1 = data.get(1);

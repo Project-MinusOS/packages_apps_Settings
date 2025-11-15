@@ -49,11 +49,11 @@ import android.telephony.ims.ImsMmTelManager;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
 
-import com.android.internal.telephony.flags.Flags;
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
 import com.android.settings.network.ims.MockWifiCallingQueryImsState;
@@ -90,6 +90,7 @@ public class WifiCallingSettingsForSubTest {
     private static final String PREFERENCE_NO_OPTIONS_DESC = "no_options_description";
     private static final String TEST_EMERGENCY_ADDRESS_CARRIER_APP =
             "com.android.settings/.wifi.calling.TestEmergencyAddressCarrierApp";
+    private static final String PREFERENCE_EMERGENCY_ADDRESS = "emergency_address_key";
 
     private TestFragment mFragment;
     private Context mContext;
@@ -138,6 +139,7 @@ public class WifiCallingSettingsForSubTest {
         doReturn(mContext.getResources()).when(mFragment).getResources();
         doReturn(mPreferenceScreen).when(mFragment).getPreferenceScreen();
         doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
+        doReturn(mock(LifecycleOwner.class)).when(mFragment).getViewLifecycleOwner();
         final Bundle bundle = new Bundle();
         when(mFragment.getArguments()).thenReturn(bundle);
         doNothing().when(mFragment).addPreferencesFromResource(anyInt());
@@ -170,7 +172,6 @@ public class WifiCallingSettingsForSubTest {
         mFragment.onAttach(mContext);
         mFragment.onCreate(null);
         mFragment.onActivityCreated(null);
-        mSetFlagsRule.disableFlags(Flags.FLAG_CARRIER_ENABLED_SATELLITE_FLAG);
     }
 
     private void setDefaultCarrierConfigValues() {
@@ -244,7 +245,6 @@ public class WifiCallingSettingsForSubTest {
 
     @Test
     public void onResume_overrideWfcRoamingModeWhileUsingNTN_shouldDisableWfcRoaming() {
-        mSetFlagsRule.enableFlags(Flags.FLAG_CARRIER_ENABLED_SATELLITE_FLAG);
         mBundle.putBoolean(
                 CarrierConfigManager.KEY_USE_WFC_HOME_NETWORK_MODE_IN_ROAMING_NETWORK_BOOL, false);
         mBundle.putBoolean(CarrierConfigManager.KEY_EDITABLE_WFC_ROAMING_MODE_BOOL, true);
@@ -380,19 +380,27 @@ public class WifiCallingSettingsForSubTest {
 
         @Override
         public <T extends Preference> T findPreference(CharSequence key) {
-            if (SWITCH_BAR.equals(key)) {
+            if (SWITCH_BAR.contentEquals(key)) {
                 return (T) mSwitchPref;
             }
-            if (BUTTON_WFC_MODE.equals(key)) {
+            if (BUTTON_WFC_MODE.contentEquals(key)) {
                 return (T) mButtonWfcMode;
             }
-            if (BUTTON_WFC_ROAMING_MODE.equals(key)) {
+            if (BUTTON_WFC_ROAMING_MODE.contentEquals(key)) {
                 return (T) mButtonWfcRoamingMode;
             }
-            if (PREFERENCE_NO_OPTIONS_DESC.equals(key)) {
+            if (PREFERENCE_NO_OPTIONS_DESC.contentEquals(key)) {
                 return (T) mDescriptionView;
             }
-            return (T) mock(ListWithEntrySummaryPreference.class);
+            if (PREFERENCE_EMERGENCY_ADDRESS.contentEquals(key)) {
+                return (T) mUpdateAddress;
+            }
+            return null;
+        }
+
+        @Override
+        public @Nullable String getPreferenceScreenBindingKey(@NonNull Context context) {
+            return null;
         }
 
         @Override

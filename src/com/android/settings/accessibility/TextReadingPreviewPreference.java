@@ -17,9 +17,12 @@
 package com.android.settings.accessibility;
 
 import android.content.Context;
+import android.os.Bundle;
+import android.os.Parcelable;
 import android.util.AttributeSet;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 
 import androidx.preference.Preference;
@@ -31,35 +34,36 @@ import com.android.internal.util.Preconditions;
 import com.android.settings.R;
 import com.android.settings.display.PreviewPagerAdapter;
 import com.android.settings.widget.DotsPageIndicator;
+import com.android.settingslib.widget.GroupSectionDividerMixin;
 
 /**
  * A {@link Preference} that could show the preview related to the text and reading options.
  */
-public class TextReadingPreviewPreference extends Preference {
+public class TextReadingPreviewPreference extends Preference implements GroupSectionDividerMixin {
+    private static final String KEY_LAST_INDEX = "last_preview_index";
     private int mCurrentItem;
     private int mLastLayerIndex;
     private PreviewPagerAdapter mPreviewAdapter;
 
     private int mLayoutMinHorizontalPadding = 0;
     private int mBackgroundMinHorizontalPadding = 0;
-
     private final ViewPager.OnPageChangeListener mPageChangeListener =
             new ViewPager.OnPageChangeListener() {
-        @Override
-        public void onPageScrolled(int i, float v, int i1) {
-            // Do nothing
-        }
+                @Override
+                public void onPageScrolled(int i, float v, int i1) {
+                    // Do nothing
+                }
 
-        @Override
-        public void onPageSelected(int i) {
-            mCurrentItem = i;
-        }
+                @Override
+                public void onPageSelected(int i) {
+                    mCurrentItem = i;
+                }
 
-        @Override
-        public void onPageScrollStateChanged(int i) {
-            // Do nothing
-        }
-    };
+                @Override
+                public void onPageScrollStateChanged(int i) {
+                    // Do nothing
+                }
+            };
 
     TextReadingPreviewPreference(Context context) {
         super(context);
@@ -96,7 +100,45 @@ public class TextReadingPreviewPreference extends Preference {
                 (DotsPageIndicator) holder.findViewById(R.id.page_indicator);
         updateAdapterIfNeeded(viewPager, pageIndicator, mPreviewAdapter);
         updatePagerAndIndicator(viewPager, pageIndicator);
+        viewPager.setClipToOutline(true);
+
+        int layoutDirection =
+                getContext().getResources().getConfiguration().getLayoutDirection();
+        int previousId = (layoutDirection == View.LAYOUT_DIRECTION_RTL)
+                ? R.id.preview_right_button : R.id.preview_left_button;
+        int nextId = (layoutDirection == View.LAYOUT_DIRECTION_RTL)
+                ? R.id.preview_left_button : R.id.preview_right_button;
+        final ImageButton previousButton = previewLayout.findViewById(previousId);
+        final ImageButton nextButton = previewLayout.findViewById(nextId);
+
+        // These call ViewPager#setCurrentItem directly
+        // because that doesn't force a refresh through notifyChanged().
+        // We found this avoids a crash in SUW (See b/386906497).
+        previousButton.setOnClickListener((view) ->
+                viewPager.setCurrentItem(getCurrentItem() - 1));
+        previousButton.setContentDescription(getContext().getString(
+                R.string.preview_pager_previous_button));
+        nextButton.setOnClickListener((view) ->
+                viewPager.setCurrentItem(getCurrentItem() + 1));
+        nextButton.setContentDescription(getContext().getString(
+                R.string.preview_pager_next_button));
     }
+
+    @Override
+    protected Parcelable onSaveInstanceState() {
+        Bundle state = new Bundle();
+        state.putParcelable(null, super.onSaveInstanceState());
+        state.putInt(KEY_LAST_INDEX, getCurrentItem());
+        return state;
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Parcelable state) {
+        Bundle bundle = (Bundle) state;
+        super.onRestoreInstanceState(bundle.getParcelable(null));
+        setCurrentItem(bundle.getInt(KEY_LAST_INDEX));
+    }
+
 
     /**
      * Set the minimum preview layout horizontal inner padding.

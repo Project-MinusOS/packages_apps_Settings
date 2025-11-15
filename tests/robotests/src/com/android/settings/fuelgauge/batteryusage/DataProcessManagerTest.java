@@ -20,7 +20,7 @@ import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
@@ -110,7 +110,7 @@ public final class DataProcessManagerTest {
         mDataProcessManager =
                 new DataProcessManager(
                         mContext,
-                        /* handler= */ null,
+                        null,
                         mUserIdsSeries,
                         /* isFromPeriodJob= */ false,
                         /* rawStartTimestamp= */ 0L,
@@ -131,7 +131,7 @@ public final class DataProcessManagerTest {
         final DataProcessManager dataProcessManager =
                 new DataProcessManager(
                         mContext,
-                        /* handler= */ null,
+                        null,
                         mUserIdsSeries,
                         /* callbackFunction= */ null);
         assertThat(dataProcessManager.getShowScreenOnTime()).isFalse();
@@ -192,7 +192,7 @@ public final class DataProcessManagerTest {
         events.add(event2);
         doReturn(getUsageEvents(events))
                 .when(mUsageStatsManager)
-                .queryEventsForUser(anyLong(), anyLong(), anyInt(), any());
+                .queryEventsWithFilter(any(), anyString());
         doReturn(true).when(mUserManager).isUserUnlocked(anyInt());
         // Assign current user id.
         doReturn(1).when(mContext).getUserId();
@@ -257,7 +257,7 @@ public final class DataProcessManagerTest {
         final DataProcessManager dataProcessManager =
                 new DataProcessManager(
                         mContext,
-                        /* handler= */ null,
+                        null,
                         mUserIdsSeries,
                         /* isFromPeriodJob= */ false,
                         /* rawStartTimestamp= */ 2L,
@@ -322,7 +322,7 @@ public final class DataProcessManagerTest {
         events.add(event);
         doReturn(getUsageEvents(events))
                 .when(mUsageStatsManager)
-                .queryEventsForUser(anyLong(), anyLong(), anyInt(), any());
+                .queryEventsWithFilter(any(), anyString());
         doReturn(true).when(mUserIdsSeries).isCurrentUserLocked();
         final MatrixCursor cursor =
                 new MatrixCursor(
@@ -349,7 +349,7 @@ public final class DataProcessManagerTest {
         assertThat(
                         DataProcessManager.getBatteryLevelData(
                                 mContext,
-                                /* handler= */ null,
+                                null,
                                 mUserIdsSeries,
                                 /* isFromPeriodJob= */ false,
                                 /* asyncResponseDelegate= */ null))
@@ -357,7 +357,7 @@ public final class DataProcessManagerTest {
         assertThat(
                         DataProcessManager.getBatteryLevelData(
                                 mContext,
-                                /* handler= */ null,
+                                null,
                                 mUserIdsSeries,
                                 /* isFromPeriodJob= */ true,
                                 /* asyncResponseDelegate= */ null))
@@ -379,7 +379,7 @@ public final class DataProcessManagerTest {
         final BatteryLevelData resultData =
                 DataProcessManager.getBatteryLevelData(
                         mContext,
-                        /* handler= */ null,
+                        null,
                         mUserIdsSeries,
                         /* isFromPeriodJob= */ false,
                         /* asyncResponseDelegate= */ null);
@@ -408,7 +408,7 @@ public final class DataProcessManagerTest {
         final BatteryLevelData resultData =
                 DataProcessManager.getBatteryLevelData(
                         mContext,
-                        /* handler= */ null,
+                        null,
                         mUserIdsSeries,
                         /* isFromPeriodJob= */ false,
                         /* asyncResponseDelegate= */ null);

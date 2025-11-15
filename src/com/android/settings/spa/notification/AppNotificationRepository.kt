@@ -94,6 +94,10 @@ class AppNotificationRepository(
         }
     }
 
+    fun hasSentMessageNotification(app: ApplicationInfo): Boolean =
+        notificationManager.hasSentValidMsg(app.packageName, app.uid)
+                || notificationManager.isInInvalidMsgState(app.packageName, app.uid)
+
     fun isEnabled(app: ApplicationInfo): Boolean =
         notificationManager.areNotificationsEnabledForPackage(app.packageName, app.uid)
 
@@ -119,6 +123,20 @@ class AppNotificationRepository(
         }
         return try {
             notificationManager.setNotificationsEnabledForPackage(app.packageName, app.uid, enabled)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Error calling INotificationManager", e)
+            false
+        }
+    }
+
+    fun isAdjustmentSupportedForPackage(app: ApplicationInfo,  key: String): Boolean =
+        notificationManager.isAdjustmentSupportedForPackage(app.userId, key, app.packageName)
+
+    fun setAdjustmentSupportedForPackage(app: ApplicationInfo, key: String, enabled: Boolean):
+            Boolean {
+        return try {
+            notificationManager.setAdjustmentSupportedForPackage(app.userId, key, app.packageName, enabled)
             true
         } catch (e: Exception) {
             Log.w(TAG, "Error calling INotificationManager", e)

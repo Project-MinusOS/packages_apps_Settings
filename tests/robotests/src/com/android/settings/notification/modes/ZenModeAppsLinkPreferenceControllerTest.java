@@ -35,7 +35,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.robolectric.Shadows.shadowOf;
 
-import android.app.Flags;
 import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.content.Intent;
@@ -45,7 +44,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.UserManager;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.service.notification.ZenPolicy;
 import android.view.LayoutInflater;
@@ -63,7 +61,6 @@ import com.android.settingslib.notification.modes.TestModeBuilder;
 import com.android.settingslib.notification.modes.ZenMode;
 import com.android.settingslib.notification.modes.ZenModesBackend;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.MoreExecutors;
 
 import org.junit.Before;
@@ -77,10 +74,10 @@ import org.robolectric.RuntimeEnvironment;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 @RunWith(RobolectricTestRunner.class)
-@EnableFlags(Flags.FLAG_MODES_UI)
 public final class ZenModeAppsLinkPreferenceControllerTest {
 
     private ZenModeAppsLinkPreferenceController mController;
@@ -152,14 +149,18 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
 
     @Test
     public void updateState_dnd_enabled() {
-        ZenMode dnd = TestModeBuilder.MANUAL_DND_ACTIVE;
+        ZenMode dnd = TestModeBuilder.MANUAL_DND;
         mController.updateState(mPreference, dnd);
         assertThat(mPreference.isEnabled()).isTrue();
     }
 
     @Test
     public void updateState_specialDnd_disabled() {
-        ZenMode specialDnd = TestModeBuilder.manualDnd(INTERRUPTION_FILTER_NONE, true);
+        ZenMode specialDnd = new TestModeBuilder()
+                .makeManualDnd()
+                .setInterruptionFilter(INTERRUPTION_FILTER_NONE)
+                .setActive(true)
+                .build();
         mController.updateState(mPreference, specialDnd);
         assertThat(mPreference.isEnabled()).isFalse();
     }
@@ -200,8 +201,8 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
         ApplicationsState.AppEntry app2 = createAppEntry("app2", mContext.getUserId());
         List<ApplicationsState.AppEntry> allApps = List.of(app1, app2);
 
-        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId(),
-                false)).thenReturn(List.of("app1"));
+        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId())).thenReturn(
+                Map.of("app1", true));
 
         assertThat(mController.getAppsBypassingDndSortedByName(allApps)).containsExactly(app1);
     }
@@ -213,8 +214,8 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
         ApplicationsState.AppEntry appB = createAppEntry("B", mContext.getUserId());
         List<ApplicationsState.AppEntry> allApps = List.of(appC, appA, appB);
 
-        when(mHelperBackend.getPackagesBypassingDnd(eq(mContext.getUserId()), anyBoolean()))
-                .thenReturn(List.of("B", "C", "A"));
+        when(mHelperBackend.getPackagesBypassingDnd(eq(mContext.getUserId())))
+                .thenReturn(Map.of("B", true, "C", false, "A", true));
 
         assertThat(mController.getAppsBypassingDndSortedByName(allApps))
                 .containsExactly(appA, appB, appC).inOrder();
@@ -234,10 +235,10 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
         List<ApplicationsState.AppEntry> allApps = List.of(workCopy, personalCopy, otherPersonal,
                 otherWork);
 
-        when(mHelperBackend.getPackagesBypassingDnd(eq(mContext.getUserId()), anyBoolean()))
-                .thenReturn(List.of("app", "p2"));
-        when(mHelperBackend.getPackagesBypassingDnd(eq(10), anyBoolean()))
-                .thenReturn(List.of("app"));
+        when(mHelperBackend.getPackagesBypassingDnd(eq(mContext.getUserId())))
+                .thenReturn(Map.of("app", true, "p2", true));
+        when(mHelperBackend.getPackagesBypassingDnd(eq(10)))
+                .thenReturn(Map.of("app", false));
 
         // Personal copy before work copy (names match).
         assertThat(mController.getAppsBypassingDndSortedByName(allApps))
@@ -253,7 +254,7 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
         mController.updateState(mPreference, zenMode);
 
         verifyNoMoreInteractions(mSession);
-        verify(mHelperBackend, never()).getPackagesBypassingDnd(anyInt(), anyBoolean());
+        verify(mHelperBackend, never()).getPackagesBypassingDnd(anyInt());
         assertThat(String.valueOf(mPreference.getSummary())).isEqualTo("None");
     }
 
@@ -266,9 +267,8 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
         ArrayList<ApplicationsState.AppEntry> appEntries = new ArrayList<>();
         appEntries.add(createAppEntry("test", mContext.getUserId()));
 
-        when(mHelperBackend.getPackagesBypassingDnd(
-                mContext.getUserId(), false))
-                .thenReturn(List.of("test"));
+        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId()))
+                .thenReturn(Map.of("test", false));
 
         // Updates the preference with the zen mode. We expect that this causes the app session
         // to trigger a rebuild (and display a temporary text in the meantime).
@@ -286,8 +286,8 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
         ZenMode zenMode = createPriorityChannelsZenMode();
 
         mController.updateState(mPreference, zenMode);
-        when(mHelperBackend.getPackagesBypassingDnd(anyInt(), anyBoolean()))
-                .thenReturn(ImmutableList.of("test1", "test2"));
+        when(mHelperBackend.getPackagesBypassingDnd(anyInt()))
+                .thenReturn(Map.of("test1", false, "test2", false));
         ArrayList<ApplicationsState.AppEntry> appEntries = new ArrayList<>();
         appEntries.add(createAppEntry("test1", mContext.getUserId()));
         appEntries.add(createAppEntry("test2", mContext.getUserId()));
@@ -328,8 +328,8 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
                 .build();
         ArrayList<ApplicationsState.AppEntry> appEntries = new ArrayList<>();
         appEntries.add(createAppEntry("test", mContext.getUserId()));
-        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId(), false))
-                .thenReturn(List.of("test"));
+        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId()))
+                .thenReturn(Map.of("test", true));
 
         mController.updateState(mPreference, zenModeWithNone);
 
@@ -355,8 +355,8 @@ public final class ZenModeAppsLinkPreferenceControllerTest {
                 .build();
         ArrayList<ApplicationsState.AppEntry> appEntries = new ArrayList<>();
         appEntries.add(createAppEntry("test", mContext.getUserId()));
-        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId(), false))
-                .thenReturn(List.of("test"));
+        when(mHelperBackend.getPackagesBypassingDnd(mContext.getUserId()))
+                .thenReturn(Map.of("test", true));
 
         mController.updateState(mPreference, zenModeWithPriority);
 

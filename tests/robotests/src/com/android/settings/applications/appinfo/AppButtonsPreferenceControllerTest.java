@@ -45,12 +45,12 @@ import android.content.Intent;
 import android.content.om.OverlayInfo;
 import android.content.om.OverlayManager;
 import android.content.pm.ApplicationInfo;
-import android.content.pm.Flags;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.RemoteException;
 import android.os.UserManager;
-import android.platform.test.annotations.RequiresFlagsEnabled;
+import android.platform.test.annotations.DisableFlags;
+import android.platform.test.flag.junit.SetFlagsRule;
 import android.util.ArraySet;
 import android.view.View;
 
@@ -60,6 +60,7 @@ import com.android.settings.R;
 import com.android.settings.SettingsActivity;
 import com.android.settings.core.InstrumentedPreferenceFragment;
 import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.shadow.ShadowUtils;
 import com.android.settingslib.applications.AppUtils;
 import com.android.settingslib.applications.ApplicationsState;
 import com.android.settingslib.applications.instantapps.InstantAppDataProvider;
@@ -68,6 +69,7 @@ import com.android.settingslib.widget.ActionButtonsPreference;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Answers;
@@ -85,6 +87,7 @@ import org.robolectric.util.ReflectionHelpers;
 
 import java.util.Set;
 
+@Config(shadows = {ShadowUtils.class})
 @RunWith(RobolectricTestRunner.class)
 public class AppButtonsPreferenceControllerTest {
 
@@ -128,6 +131,9 @@ public class AppButtonsPreferenceControllerTest {
     private ActionButtonsPreference mButtonPrefs;
     private AppButtonsPreferenceController mController;
 
+    @Rule
+    public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
+
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
@@ -168,6 +174,7 @@ public class AppButtonsPreferenceControllerTest {
     @After
     public void tearDown() {
         ShadowAppUtils.reset();
+        ShadowUtils.reset();
     }
 
     @Test
@@ -351,7 +358,6 @@ public class AppButtonsPreferenceControllerTest {
     }
 
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_IMPROVE_HOME_APP_BEHAVIOR)
     public void updateUninstallButton_isNotSystemAndIsCurrentHomeAndHasOneHome_setButtonDisable() {
         doReturn(false).when(mController).isSystemPackage(any(), any(), any());
         doReturn(new ComponentName(PACKAGE_NAME, "cls")).when(mPackageManager).getHomeActivities(
@@ -365,7 +371,6 @@ public class AppButtonsPreferenceControllerTest {
     }
 
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_IMPROVE_HOME_APP_BEHAVIOR)
     public void updateUninstallButton_isNotSystemAndIsCurrentHomeAndHasOtherHome_setButtonEnable() {
         doReturn(false).when(mController).isSystemPackage(any(), any(), any());
         doReturn(new ComponentName(PACKAGE_NAME, "cls")).when(mPackageManager).getHomeActivities(
@@ -543,8 +548,17 @@ public class AppButtonsPreferenceControllerTest {
 
     @Test
     @Config(shadows = ShadowAppUtils.class)
+    @DisableFlags({android.content.pm.Flags.FLAG_REMOVE_HIDDEN_MODULE_USAGE})
     public void getAvailabilityStatus_systemModule() {
         ShadowAppUtils.addHiddenModule(mController.mPackageName);
+        assertThat(mController.getAvailabilityStatus()).isEqualTo(
+                AppButtonsPreferenceController.DISABLED_FOR_USER);
+    }
+
+    @Test
+    @Config(shadows = ShadowAppUtils.class)
+    public void getAvailabilityStatus_mainlineModule() {
+        ShadowAppUtils.addMainlineModule(mController.mPackageName);
         assertThat(mController.getAvailabilityStatus()).isEqualTo(
                 AppButtonsPreferenceController.DISABLED_FOR_USER);
     }
@@ -639,15 +653,18 @@ public class AppButtonsPreferenceControllerTest {
     @Implements(AppUtils.class)
     public static class ShadowAppUtils {
 
+        // TODO(b/382016780): to be removed after flag cleanup.
         public static Set<String> sSystemModules = new ArraySet<>();
         public static Set<String> sMainlineModules = new ArraySet<>();
 
         @Resetter
         public static void reset() {
+            // TODO(b/382016780): to be removed after flag cleanup.
             sSystemModules.clear();
             sMainlineModules.clear();
         }
 
+        // TODO(b/382016780): to be removed after flag cleanup.
         public static void addHiddenModule(String pkg) {
             sSystemModules.add(pkg);
         }
@@ -661,6 +678,7 @@ public class AppButtonsPreferenceControllerTest {
             return false;
         }
 
+        // TODO(b/382016780): to be removed after flag cleanup.
         @Implementation
         protected static boolean isSystemModule(Context context, String packageName) {
             return sSystemModules.contains(packageName);

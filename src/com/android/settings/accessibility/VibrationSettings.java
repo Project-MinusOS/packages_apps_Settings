@@ -20,10 +20,11 @@ import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.os.Vibrator;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import com.android.settings.R;
-import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settingslib.search.SearchIndexable;
 
@@ -31,9 +32,14 @@ import com.android.settingslib.search.SearchIndexable;
  * Accessibility settings for the vibration.
  */
 @SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
-public class VibrationSettings extends DashboardFragment {
+public class VibrationSettings extends BaseSupportFragment {
 
     private static final String TAG = "VibrationSettings";
+
+    @Override
+    public @Nullable String getPreferenceScreenBindingKey(@NonNull Context context) {
+        return VibrationScreen.KEY;
+    }
 
     @Override
     public int getMetricsCategory() {

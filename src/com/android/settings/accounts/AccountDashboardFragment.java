@@ -27,6 +27,9 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.provider.SearchIndexableResource;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.android.settings.R;
 import com.android.settings.applications.autofill.PasswordsPreferenceController;
 import com.android.settings.applications.credentials.CredentialManagerPreferenceController;
@@ -50,6 +53,7 @@ import com.android.settingslib.search.SearchIndexableRaw;
 import java.util.ArrayList;
 import java.util.List;
 
+// LINT.IfChange
 @SearchIndexable
 public class AccountDashboardFragment extends DashboardFragment {
     private static final String TAG = "AccountDashboardFrag";
@@ -89,7 +93,8 @@ public class AccountDashboardFragment extends DashboardFragment {
                     forceUpdatePreferences();
                 }
             };
-            cmpp.init(this, getFragmentManager(), getIntent(), delegate, /*isWorkProfile=*/false);
+            cmpp.init(this, getFragmentManager(), getIntent(), delegate,
+                    /*isWorkProfile=*/false, /*isPrivateSpace=*/ false);
         } else {
             getSettingsLifecycle().addObserver(use(PasswordsPreferenceController.class));
         }
@@ -98,7 +103,8 @@ public class AccountDashboardFragment extends DashboardFragment {
     @Override
     protected List<AbstractPreferenceController> createPreferenceControllers(Context context) {
         final List<AbstractPreferenceController> controllers = new ArrayList<>();
-        buildAutofillPreferenceControllers(context, controllers);
+        buildAutofillPreferenceControllers(context, controllers,
+                /*isWorkProfile=*/false, /*isPrivateSpace=*/ false);
         final String[] authorities = getIntent().getStringArrayExtra(EXTRA_AUTHORITIES);
         buildAccountPreferenceControllers(context, this /* parent */, authorities, controllers);
         return controllers;
@@ -109,10 +115,19 @@ public class AccountDashboardFragment extends DashboardFragment {
         return true;
     }
 
+    @Override
+    public @Nullable String getPreferenceScreenBindingKey(@NonNull Context context) {
+        return AccountScreen.KEY;
+    }
+
     static void buildAutofillPreferenceControllers(
-            Context context, List<AbstractPreferenceController> controllers) {
+            Context context,
+            List<AbstractPreferenceController> controllers,
+            boolean isWorkProfile,
+            boolean isPrivateSpace) {
         if (CredentialManager.isServiceEnabled(context)) {
-            controllers.add(new DefaultCombinedPreferenceController(context));
+            controllers.add(new DefaultCombinedPreferenceController(
+                    context, isWorkProfile, isPrivateSpace));
             controllers.add(new DefaultWorkCombinedPreferenceController(context));
             controllers.add(new DefaultPrivateCombinedPreferenceController(context));
         } else {
@@ -162,7 +177,7 @@ public class AccountDashboardFragment extends DashboardFragment {
                     final List<AbstractPreferenceController> controllers = new ArrayList<>();
                     buildAccountPreferenceControllers(
                             context, null /* parent */, null /* authorities*/, controllers);
-                    buildAutofillPreferenceControllers(context, controllers);
+                    buildAutofillPreferenceControllers(context, controllers, false, false);
                     return controllers;
                 }
 
@@ -193,3 +208,4 @@ public class AccountDashboardFragment extends DashboardFragment {
                 }
             };
 }
+// LINT.ThenChange(AccountScreen.kt)

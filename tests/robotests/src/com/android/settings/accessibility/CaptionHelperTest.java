@@ -35,6 +35,7 @@ import androidx.test.core.app.ApplicationProvider;
 
 import com.android.internal.widget.SubtitleView;
 import com.android.settings.R;
+import com.android.settings.core.BasePreferenceController;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -181,5 +182,21 @@ public class CaptionHelperTest {
         final int style = Settings.Secure.getInt(mContentResolver,
                 Settings.Secure.ACCESSIBILITY_CAPTIONING_PRESET, 0);
         assertThat(style).isEqualTo(CaptionStyle.PRESET_CUSTOM);
+    }
+
+    @Test
+    public void getAvailabilityStatus_customCaption_shouldReturnAvailable() {
+        when(mCaptioningManager.getRawUserStyle()).thenReturn(CaptionStyle.PRESET_CUSTOM);
+
+        assertThat(mCaptionHelper.getCustomCaptionAvailability())
+                .isEqualTo(BasePreferenceController.AVAILABLE);
+    }
+
+    @Test
+    public void getAvailabilityStatus_notCustom_shouldReturnUnsearchable() {
+        when(mCaptioningManager.getRawUserStyle()).thenReturn(0);
+
+        assertThat(mCaptionHelper.getCustomCaptionAvailability())
+                .isEqualTo(BasePreferenceController.AVAILABLE_UNSEARCHABLE);
     }
 }

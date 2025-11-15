@@ -31,11 +31,9 @@ import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
-import android.text.BidiFormatter;
-import android.text.format.Formatter;
-import android.text.format.Formatter.BytesResult;
 import android.util.Log;
 
+import com.android.settings.Utils;
 import com.android.settings.datausage.lib.DataUsageLib;
 import com.android.settings.network.ProxySubscriptionManager;
 
@@ -52,19 +50,6 @@ public final class DataUsageUtils {
     private static final String TAG = "DataUsageUtils";
 
     private DataUsageUtils() {
-    }
-
-    /**
-     * Format byte value to readable string using IEC units.
-     *
-     * @deprecated Use {@link com.android.settings.datausage.lib.DataUsageFormatter} instead.
-     */
-    @Deprecated
-    public static CharSequence formatDataUsage(Context context, long byteValue) {
-        final BytesResult res = Formatter.formatBytes(context.getResources(), byteValue,
-                Formatter.FLAG_IEC_UNITS);
-        return BidiFormatter.getInstance().unicodeWrap(context.getString(
-                com.android.internal.R.string.fileSizeSuffix, res.value, res.units));
     }
 
     /**
@@ -100,11 +85,11 @@ public final class DataUsageUtils {
 
     /**
      * Returns whether device has mobile data.
-     * TODO: This is the opposite to Utils.isWifiOnly(), it should be refactored into 1 method.
+     * The only purpose of this helper method is to allow easy mocking, e.g. via
+     * ShadowDataUsageUtils.IS_MOBILE_DATA_SUPPORTED.
      */
     public static boolean hasMobileData(Context context) {
-        final TelephonyManager tele = context.getSystemService(TelephonyManager.class);
-        return tele.isDataCapable();
+        return Utils.isMobileDataCapable(context);
     }
 
     /**

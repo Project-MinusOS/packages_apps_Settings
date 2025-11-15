@@ -16,6 +16,7 @@
 
 package com.android.settings.fuelgauge.batterytip;
 
+import android.app.Activity;
 import android.content.Context;
 import android.os.BadParcelableException;
 import android.os.Bundle;
@@ -27,14 +28,13 @@ import androidx.annotation.VisibleForTesting;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
 
-import com.android.settings.SettingsActivity;
 import com.android.settings.core.BasePreferenceController;
 import com.android.settings.core.InstrumentedPreferenceFragment;
 import com.android.settings.fuelgauge.batterytip.actions.BatteryTipAction;
 import com.android.settings.fuelgauge.batterytip.tips.BatteryTip;
 import com.android.settings.overlay.FeatureFactory;
-import com.android.settings.widget.TipCardPreference;
 import com.android.settingslib.core.instrumentation.MetricsFeatureProvider;
+import com.android.settingslib.widget.BannerMessagePreference;
 
 import java.util.List;
 import java.util.Map;
@@ -52,11 +52,13 @@ public class BatteryTipPreferenceController extends BasePreferenceController {
     private BatteryTipListener mBatteryTipListener;
     private List<BatteryTip> mBatteryTips;
     private Map<String, BatteryTip> mBatteryTipMap;
-    private SettingsActivity mSettingsActivity;
+    private Activity mActivity;
     private MetricsFeatureProvider mMetricsFeatureProvider;
     private boolean mNeedUpdate;
-    @VisibleForTesting TipCardPreference mCardPreference;
+
+    @VisibleForTesting BannerMessagePreference mCardPreference;
     @VisibleForTesting Context mPrefContext;
+
     InstrumentedPreferenceFragment mFragment;
 
     public BatteryTipPreferenceController(Context context, String preferenceKey) {
@@ -66,8 +68,8 @@ public class BatteryTipPreferenceController extends BasePreferenceController {
         mNeedUpdate = true;
     }
 
-    public void setActivity(SettingsActivity activity) {
-        mSettingsActivity = activity;
+    public void setActivity(Activity activity) {
+        mActivity = activity;
     }
 
     public void setFragment(InstrumentedPreferenceFragment fragment) {
@@ -126,7 +128,7 @@ public class BatteryTipPreferenceController extends BasePreferenceController {
             } else {
                 final BatteryTipAction action =
                         BatteryTipUtils.getActionForBatteryTip(
-                                batteryTip, mSettingsActivity, mFragment);
+                                batteryTip, mActivity, mFragment);
                 if (action != null) {
                     action.handlePositiveAction(mFragment.getMetricsCategory());
                 }

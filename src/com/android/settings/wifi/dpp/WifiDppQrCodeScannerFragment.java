@@ -16,6 +16,7 @@
 
 package com.android.settings.wifi.dpp;
 
+import static android.content.res.Resources.ID_NULL;
 import static android.net.wifi.WifiInfo.sanitizeSsid;
 
 import android.app.Activity;
@@ -59,7 +60,6 @@ import androidx.lifecycle.ViewModelProvider;
 import com.android.settings.R;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.qrcode.QrCamera;
-import com.android.settingslib.qrcode.QrDecorateView;
 import com.android.settingslib.wifi.WifiPermissionChecker;
 import com.android.wifitrackerlib.WifiEntry;
 import com.android.wifitrackerlib.WifiPickerTracker;
@@ -101,9 +101,10 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
     // Interval between initiating WifiPickerTracker scans.
     private static final long SCAN_INTERVAL_MILLIS = 10_000;
 
+    private static final @StringRes int REACHABLE_WIFI_NETWORK = ID_NULL;
+
     private QrCamera mCamera;
     private TextureView mTextureView;
-    private QrDecorateView mDecorateView;
     private TextView mErrorMessage;
 
     /** true if the fragment working for configurator, false enrollee*/
@@ -148,7 +149,6 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
 
                     if (msg.arg1 == ARG_RESTART_CAMERA) {
                         setProgressBarShown(false);
-                        mDecorateView.setFocused(false);
                         restartCamera();
                     }
                     break;
@@ -201,8 +201,9 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
                     wifiManager.enableNetwork(id, /* attemptConnect */ false);
                     // WifiTracker only contains a hidden SSID Wi-Fi network if it's saved.
                     // We can't check if a hidden SSID Wi-Fi network is reachable in advance.
-                    if (qrCodeWifiConfiguration.hiddenSSID
-                            || isReachableWifiNetwork(qrCodeWifiConfiguration)) {
+                    @StringRes int wifiReachabilityStringId =
+                            getWifiReachabilityStringId(qrCodeWifiConfiguration);
+                    if (wifiReachabilityStringId == REACHABLE_WIFI_NETWORK) {
                         hasHiddenOrReachableWifiNetwork = true;
                         mEnrolleeWifiConfiguration = qrCodeWifiConfiguration;
                         wifiManager.connect(id,
@@ -210,8 +211,7 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
                     }
 
                     if (!hasHiddenOrReachableWifiNetwork) {
-                        showErrorMessageAndRestartCamera(
-                                R.string.wifi_dpp_check_connection_try_again);
+                        showErrorMessageAndRestartCamera(wifiReachabilityStringId);
                         return;
                     }
 
@@ -236,13 +236,15 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
             mCamera.stop();
         }
 
-        mDecorateView.setFocused(true);
         mErrorMessage.setVisibility(View.INVISIBLE);
 
         WifiDppUtils.triggerVibrationForQrCodeRecognition(getContext());
     }
 
-    private boolean isReachableWifiNetwork(WifiConfiguration wifiConfiguration) {
+    private @StringRes int getWifiReachabilityStringId(WifiConfiguration wifiConfiguration) {
+        if (wifiConfiguration.hiddenSSID) {
+            return REACHABLE_WIFI_NETWORK;
+        }
         final List<WifiEntry> wifiEntries = mWifiPickerTracker.getWifiEntries();
         final WifiEntry connectedWifiEntry = mWifiPickerTracker.getConnectedWifiEntry();
         if (connectedWifiEntry != null) {
@@ -250,24 +252,42 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
             wifiEntries.add(connectedWifiEntry);
         }
 
+        boolean canFindNetwork = false;
         for (WifiEntry wifiEntry : wifiEntries) {
             if (!TextUtils.equals(wifiEntry.getSsid(), sanitizeSsid(wifiConfiguration.SSID))) {
                 continue;
             }
-            final int security =
-                    WifiDppUtils.getSecurityTypeFromWifiConfiguration(wifiConfiguration);
-            if (security == wifiEntry.getSecurity()) {
-                return true;
-            }
-
-            // Default security type of PSK/SAE transition mode WifiEntry is SECURITY_PSK and
-            // there is no way to know if a WifiEntry is of transition mode. Give it a chance.
-            if (security == WifiEntry.SECURITY_SAE
-                    && wifiEntry.getSecurity() == WifiEntry.SECURITY_PSK) {
-                return true;
+            canFindNetwork = true;
+            int security = WifiDppUtils.getSecurityTypeFromWifiConfiguration(wifiConfiguration);
+            if (isSecurityMatched(security, wifiEntry.getSecurity())) {
+                Log.d(TAG, "WiFi DPP detects connection security for a matching WiFi network.");
+                return REACHABLE_WIFI_NETWORK;
             }
         }
-        return false;
+        if (canFindNetwork) {
+            Log.e(TAG, "WiFi DPP check connection no matched security");
+            return R.string.wifi_dpp_check_connection_no_matched_security;
+        }
+        Log.e(TAG, "WiFi DPP check connection no matched SSID");
+        return R.string.wifi_dpp_check_connection_no_matched_ssid;
+    }
+
+    @VisibleForTesting
+    boolean isSecurityMatched(int qrSecurity, int entrySecurity) {
+        if (qrSecurity == entrySecurity) {
+            return true;
+        }
+        // Default security type of PSK/SAE transition mode WifiEntry is SECURITY_PSK and
+        // there is no way to know if a WifiEntry is of transition mode. Give it a chance.
+        if (qrSecurity == WifiEntry.SECURITY_SAE && entrySecurity == WifiEntry.SECURITY_PSK) {
+            return true;
+        }
+        // If configured is no password, the Wi-Fi framework will attempt OPEN and OWE security.
+        return isNoPasswordSecurity(qrSecurity) && isNoPasswordSecurity(entrySecurity);
+    }
+
+    private boolean isNoPasswordSecurity(int security) {
+        return security == WifiEntry.SECURITY_NONE || security == WifiEntry.SECURITY_OWE;
     }
 
     @VisibleForTesting
@@ -452,8 +472,6 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
         mTextureView = view.findViewById(R.id.preview_view);
         mTextureView.setSurfaceTextureListener(this);
 
-        mDecorateView = view.findViewById(R.id.decorate_view);
-
         setProgressBarShown(isWifiDppHandshaking());
 
         if (mIsConfiguratorMode) {
@@ -581,11 +599,7 @@ public class WifiDppQrCodeScannerFragment extends WifiDppQrCodeBaseFragment impl
         if (mCamera == null) {
             mCamera = new QrCamera(getContext(), this);
 
-            if (isWifiDppHandshaking()) {
-                if (mDecorateView != null) {
-                    mDecorateView.setFocused(true);
-                }
-            } else {
+            if (!isWifiDppHandshaking()) {
                 mCamera.start(surface);
             }
         }

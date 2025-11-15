@@ -17,19 +17,19 @@
 package com.android.settings.accessibility;
 
 import android.app.settings.SettingsEnums;
+import android.content.Context;
 import android.hardware.display.ColorDisplayManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.Settings;
-import android.view.accessibility.Flags;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceCategory;
 import androidx.preference.TwoStatePreference;
 
-import com.android.internal.annotations.VisibleForTesting;
 import com.android.settings.R;
-import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.search.SearchIndexable;
@@ -39,7 +39,7 @@ import java.util.List;
 
 /** Accessibility settings for color and motion. */
 @SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
-public class ColorAndMotionFragment extends DashboardFragment {
+public class ColorAndMotionFragment extends BaseSupportFragment {
 
     private static final String TAG = "ColorAndMotionFragment";
 
@@ -47,14 +47,9 @@ public class ColorAndMotionFragment extends DashboardFragment {
 
     // Preferences
     private static final String DISPLAY_DALTONIZER_PREFERENCE_SCREEN = "daltonizer_preference";
-    private static final String TOGGLE_DISABLE_ANIMATIONS = "toggle_disable_animations";
-    private static final String TOGGLE_LARGE_POINTER_ICON = "toggle_large_pointer_icon";
-    @VisibleForTesting
-    static final String TOGGLE_FORCE_INVERT = "toggle_force_invert";
 
     private Preference mDisplayDaltonizerPreferenceScreen;
     private TwoStatePreference mToggleDisableAnimationsPreference;
-    private TwoStatePreference mToggleLargePointerIconPreference;
     private AccessibilitySettingsContentObserver mSettingsContentObserver;
 
     private final List<String> mShortcutFeatureKeys = new ArrayList<>();
@@ -67,23 +62,17 @@ public class ColorAndMotionFragment extends DashboardFragment {
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
-        initializeAllPreferences();
-        updateSystemPreferences();
 
-        mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED);
-        mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED);
-        mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_SHORTCUT_TARGET_SERVICE);
-        mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_BUTTON_TARGETS);
-        if (android.view.accessibility.Flags.a11yQsShortcut()) {
-            mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_QS_TARGETS);
-        }
-        if (Flags.forceInvertColor()) {
-            mShortcutFeatureKeys.add(ToggleForceInvertPreferenceController.SETTINGS_KEY);
-        }
+        if (!isCatalystEnabled()) {
+            initializeAllPreferences();
+            updateSystemPreferences();
+            mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED);
+            mShortcutFeatureKeys.add(Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED);
 
-        mSettingsContentObserver = new AccessibilitySettingsContentObserver(new Handler());
-        mSettingsContentObserver.registerKeysToObserverCallback(mShortcutFeatureKeys,
-                key -> updatePreferencesState());
+            mSettingsContentObserver = new AccessibilitySettingsContentObserver(new Handler());
+            mSettingsContentObserver.registerKeysToObserverCallback(mShortcutFeatureKeys,
+                    key -> updatePreferencesState());
+        }
     }
 
     private void updatePreferencesState() {
@@ -96,15 +85,17 @@ public class ColorAndMotionFragment extends DashboardFragment {
     @Override
     public void onStart() {
         super.onStart();
-
-        mSettingsContentObserver.register(getContentResolver());
+        if (!isCatalystEnabled()) {
+            mSettingsContentObserver.register(getContentResolver());
+        }
     }
 
     @Override
     public void onStop() {
         super.onStop();
-
-        mSettingsContentObserver.unregister(getContentResolver());
+        if (!isCatalystEnabled()) {
+            mSettingsContentObserver.unregister(getContentResolver());
+        }
     }
 
     @Override
@@ -122,18 +113,17 @@ public class ColorAndMotionFragment extends DashboardFragment {
         mDisplayDaltonizerPreferenceScreen = findPreference(DISPLAY_DALTONIZER_PREFERENCE_SCREEN);
 
         // Disable animation.
-        mToggleDisableAnimationsPreference = findPreference(TOGGLE_DISABLE_ANIMATIONS);
-
-        // Large pointer icon.
-        mToggleLargePointerIconPreference = findPreference(TOGGLE_LARGE_POINTER_ICON);
+        mToggleDisableAnimationsPreference = findPreference(RemoveAnimationsPreference.KEY);
     }
 
     /**
      * Updates preferences related to system configurations.
      */
+    // LINT.IfChange(ui_hierarchy)
     private void updateSystemPreferences() {
         final PreferenceCategory experimentalCategory = getPreferenceScreen().findPreference(
                 CATEGORY_EXPERIMENTAL);
+
         if (ColorDisplayManager.isColorTransformAccelerated(getContext())) {
             getPreferenceScreen().removePreference(experimentalCategory);
         } else {
@@ -141,11 +131,16 @@ public class ColorAndMotionFragment extends DashboardFragment {
             // hardware-accelerated color transform.
             getPreferenceScreen().removePreference(mDisplayDaltonizerPreferenceScreen);
             getPreferenceScreen().removePreference(mToggleDisableAnimationsPreference);
-            getPreferenceScreen().removePreference(mToggleLargePointerIconPreference);
             experimentalCategory.addPreference(mDisplayDaltonizerPreferenceScreen);
             experimentalCategory.addPreference(mToggleDisableAnimationsPreference);
-            experimentalCategory.addPreference(mToggleLargePointerIconPreference);
         }
+    }
+    // LINT.ThenChange(/src/com/android/settings/accessibility/ColorAndMotionScreen.kt:ui_hierarchy)
+
+    @Nullable
+    @Override
+    public String getPreferenceScreenBindingKey(@NonNull Context context) {
+        return ColorAndMotionScreen.KEY;
     }
 
     public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =

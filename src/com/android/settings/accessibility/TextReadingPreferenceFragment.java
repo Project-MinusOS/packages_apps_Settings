@@ -32,9 +32,10 @@ import android.widget.Toast;
 import androidx.annotation.IntDef;
 import androidx.appcompat.app.AlertDialog;
 
+import com.android.graphics.hwui.flags.Flags;
+import com.android.modules.expresslog.Counter;
 import com.android.settings.R;
 import com.android.settings.accessibility.AccessibilityDialogUtils.DialogEnums;
-import com.android.settings.dashboard.DashboardFragment;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.search.SearchIndexable;
@@ -53,7 +54,7 @@ import java.util.stream.Collectors;
  * example, bold text, high contrast text, display size, font size and so on.
  */
 @SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
-public class TextReadingPreferenceFragment extends DashboardFragment {
+public class TextReadingPreferenceFragment extends BaseSupportFragment {
     public static final String EXTRA_LAUNCHED_FROM = "launched_from";
     private static final String TAG = "TextReadingPreferenceFragment";
     private static final String SETUP_WIZARD_PACKAGE = "setupwizard";
@@ -64,7 +65,6 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
     static final String RESET_KEY = "reset";
     static final String PREVIEW_KEY = "preview";
     private static final String NEED_RESET_SETTINGS = "need_reset_settings";
-    private static final String LAST_PREVIEW_INDEX = "last_preview_index";
     private static final int UNKNOWN_INDEX = -1;
 
     private FontWeightAdjustmentPreferenceController mFontWeightAdjustmentController;
@@ -83,6 +83,7 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
             EntryPoint.SUW_ANYTHING_ELSE,
             EntryPoint.DISPLAY_SETTINGS,
             EntryPoint.ACCESSIBILITY_SETTINGS,
+            EntryPoint.HIGH_CONTRAST_TEXT_NOTIFICATION,
     })
     @interface EntryPoint {
         int UNKNOWN_ENTRY = 0;
@@ -90,6 +91,7 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
         int SUW_ANYTHING_ELSE = 2;
         int DISPLAY_SETTINGS = 3;
         int ACCESSIBILITY_SETTINGS = 4;
+        int HIGH_CONTRAST_TEXT_NOTIFICATION = 5;
     }
 
     @VisibleForTesting
@@ -109,13 +111,6 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
             if (savedInstanceState.getBoolean(NEED_RESET_SETTINGS)) {
                 mResetStateListeners.forEach(ResetStateListener::resetState);
             }
-
-            if (savedInstanceState.containsKey(LAST_PREVIEW_INDEX)) {
-                final int lastPreviewIndex = savedInstanceState.getInt(LAST_PREVIEW_INDEX);
-                if (lastPreviewIndex != UNKNOWN_INDEX) {
-                    mPreviewController.setCurrentItem(lastPreviewIndex);
-                }
-            }
         }
     }
 
@@ -126,6 +121,14 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
         if (rootView != null) {
             rootView.setAccessibilityPaneTitle(getString(
                     R.string.accessibility_text_reading_options_title));
+        }
+        if (Flags.highContrastTextSmallTextRect()) {
+            updateEntryPoint();
+            if (mEntryPoint == EntryPoint.HIGH_CONTRAST_TEXT_NOTIFICATION
+                    // Only log this counter during the first launch, not during activity refresh
+                    && savedInstanceState == null) {
+                Counter.logIncrement("accessibility.value_hct_notification_opened_settings");
+            }
         }
     }
 
@@ -157,7 +160,7 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
         mPreviewController.setEntryPoint(mEntryPoint);
         controllers.add(mPreviewController);
 
-        final PreviewSizeSeekBarController fontSizeController = new PreviewSizeSeekBarController(
+        final PreviewSizeSliderController fontSizeController = new PreviewSizeSliderController(
                 context, FONT_SIZE_KEY, fontSizeData) {
             @Override
             ComponentName getTileComponentName() {
@@ -183,7 +186,7 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
         getSettingsLifecycle().addObserver(fontSizeController);
         controllers.add(fontSizeController);
 
-        final PreviewSizeSeekBarController displaySizeController = new PreviewSizeSeekBarController(
+        final PreviewSizeSliderController displaySizeController = new PreviewSizeSliderController(
                 context, DISPLAY_SIZE_KEY, displaySizeData) {
             @Override
             ComponentName getTileComponentName() {
@@ -250,8 +253,6 @@ public class TextReadingPreferenceFragment extends DashboardFragment {
         if (mNeedResetSettings) {
             outState.putBoolean(NEED_RESET_SETTINGS, true);
         }
-
-        outState.putInt(LAST_PREVIEW_INDEX, mPreviewController.getCurrentItem());
     }
 
     @Override

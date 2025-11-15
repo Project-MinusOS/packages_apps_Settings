@@ -42,7 +42,8 @@ import com.android.settingslib.media.BluetoothMediaDevice;
 import com.android.settingslib.media.MediaDevice;
 import com.android.settingslib.media.MediaOutputConstants;
 
-public class MediaVolumePreferenceController extends VolumeSeekBarPreferenceController {
+// LINT.IfChange
+public class MediaVolumePreferenceController extends VolumeSliderPreferenceController {
     private static final String TAG = "MediaVolumePreCtrl";
     private static final String KEY_MEDIA_VOLUME = "media_volume";
 
@@ -204,3 +205,4 @@ public class MediaVolumePreferenceController extends VolumeSeekBarPreferenceCont
         return MediaOutputIndicatorWorker.class;
     }
 }
+// LINT.ThenChange(MediaVolumePreference.kt)

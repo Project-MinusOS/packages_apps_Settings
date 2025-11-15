@@ -23,21 +23,20 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.app.Flags;
 import android.content.Context;
-import android.platform.test.annotations.EnableFlags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.service.notification.SystemZenRules;
 import android.service.notification.ZenModeConfig;
 import android.view.ViewGroup;
 import android.widget.ToggleButton;
 
-import androidx.fragment.app.Fragment;
 import androidx.test.core.app.ApplicationProvider;
 
 import com.android.settings.R;
+import com.android.settings.dashboard.DashboardFragment;
 import com.android.settingslib.notification.modes.TestModeBuilder;
 import com.android.settingslib.notification.modes.ZenMode;
+import com.android.settingslib.notification.modes.ZenModeSchedules;
 import com.android.settingslib.notification.modes.ZenModesBackend;
 
 import org.junit.Before;
@@ -60,7 +59,7 @@ public class ZenModeSetSchedulePreferenceControllerTest {
     private Context mContext;
 
     @Mock
-    private Fragment mParent;
+    private DashboardFragment mParent;
     @Mock
     private Calendar mCalendar;
     @Mock
@@ -80,7 +79,6 @@ public class ZenModeSetSchedulePreferenceControllerTest {
     }
 
     @Test
-    @EnableFlags({Flags.FLAG_MODES_API, Flags.FLAG_MODES_UI})
     public void updateScheduleRule_updatesConditionAndTriggerDescription() {
         ZenMode mode = new TestModeBuilder()
                 .setPackage(SystemZenRules.PACKAGE_ANDROID)
@@ -92,11 +90,10 @@ public class ZenModeSetSchedulePreferenceControllerTest {
         scheduleInfo.endHour = 2;
         ZenMode out = mPrefController.updateScheduleMode(scheduleInfo).apply(mode);
 
-        assertThat(out.getRule().getConditionId())
-                .isEqualTo(ZenModeConfig.toScheduleConditionId(scheduleInfo));
-        assertThat(out.getRule().getTriggerDescription()).isNotEmpty();
-        assertThat(out.getRule().getOwner()).isEqualTo(
+        assertThat(ZenModeSchedules.getTimeSchedule(out)).isEqualTo(scheduleInfo);
+        assertThat(out.getOwner().conditionProvider()).isEqualTo(
                 ZenModeConfig.getScheduleConditionProvider());
+        assertThat(out.getTriggerDescription()).isNotEmpty();
     }
 
     @Test

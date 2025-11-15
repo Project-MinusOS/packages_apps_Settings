@@ -17,17 +17,24 @@
 package com.android.settings.connecteddevice.audiosharing.audiostreams;
 
 import static com.android.settingslib.flags.Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX;
+import static com.android.settingslib.flags.Flags.FLAG_ENABLE_LE_AUDIO_SHARING;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothLeBroadcastMetadata;
 import android.bluetooth.BluetoothLeBroadcastReceiveState;
+import android.bluetooth.BluetoothStatusCodes;
+import android.content.Context;
 import android.platform.test.flag.junit.SetFlagsRule;
+
+import androidx.test.core.app.ApplicationProvider;
+
+import com.android.settings.testutils.shadow.ShadowBluetoothAdapter;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -37,16 +44,23 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
+import org.robolectric.shadow.api.Shadow;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(
+        shadows = {
+            ShadowBluetoothAdapter.class,
+        })
 public class AudioStreamsProgressCategoryCallbackTest {
     @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
-
-    @Mock private AudioStreamsProgressCategoryController mController;
+    private final Context mContext = ApplicationProvider.getApplicationContext();
+    @Mock private AudioStreamsProgressCategoryCallback.SourceStateListener mSourceStateListener;
+    @Mock private AudioStreamsProgressCategoryCallback.ScanStateListener mScanStateListener;
     @Mock private BluetoothDevice mDevice;
     @Mock private BluetoothLeBroadcastReceiveState mState;
     @Mock private BluetoothLeBroadcastMetadata mMetadata;
@@ -56,7 +70,16 @@ public class AudioStreamsProgressCategoryCallbackTest {
     @Before
     public void setUp() {
         mSetFlagsRule.disableFlags(FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
-        mCallback = new AudioStreamsProgressCategoryCallback(mController);
+        ShadowBluetoothAdapter shadowBluetoothAdapter =
+                Shadow.extract(BluetoothAdapter.getDefaultAdapter());
+        shadowBluetoothAdapter.setEnabled(true);
+        shadowBluetoothAdapter.setIsLeAudioBroadcastSourceSupported(
+                BluetoothStatusCodes.FEATURE_SUPPORTED);
+        shadowBluetoothAdapter.setIsLeAudioBroadcastAssistantSupported(
+                BluetoothStatusCodes.FEATURE_SUPPORTED);
+        mCallback = new AudioStreamsProgressCategoryCallback();
+        mCallback.setSourceStateListener(mSourceStateListener);
+        mCallback.setScanStateListener(mScanStateListener);
     }
 
     @Test
@@ -66,11 +89,12 @@ public class AudioStreamsProgressCategoryCallbackTest {
         when(mState.getBisSyncState()).thenReturn(bisSyncState);
         mCallback.onReceiveStateChanged(mDevice, /* sourceId= */ 0, mState);
 
-        verify(mController).handleSourceConnected(any());
+        verify(mSourceStateListener).handleSourceStreaming(any(), any());
     }
 
     @Test
     public void testOnReceiveStateChanged_sourcePresent() {
+        mSetFlagsRule.enableFlags(FLAG_ENABLE_LE_AUDIO_SHARING);
         mSetFlagsRule.enableFlags(FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
         String address = "11:22:33:44:55:66";
 
@@ -80,7 +104,7 @@ public class AudioStreamsProgressCategoryCallbackTest {
         when(mSourceDevice.getAddress()).thenReturn(address);
         mCallback.onReceiveStateChanged(mDevice, /* sourceId= */ 0, mState);
 
-        verify(mController).handleSourcePresent(any());
+        verify(mSourceStateListener).handleSourcePaused(any(), any());
     }
 
     @Test
@@ -91,36 +115,35 @@ public class AudioStreamsProgressCategoryCallbackTest {
                 .thenReturn(BluetoothLeBroadcastReceiveState.BIG_ENCRYPTION_STATE_BAD_CODE);
         mCallback.onReceiveStateChanged(mDevice, /* sourceId= */ 0, mState);
 
-        verify(mController).handleSourceConnectBadCode(any());
+        verify(mSourceStateListener).handleSourceConnectBadCode(any());
     }
 
     @Test
     public void testOnSearchStartFailed() {
         mCallback.onSearchStartFailed(/* reason= */ 0);
 
-        verify(mController).showToast(anyString());
-        verify(mController).setScanning(anyBoolean());
+        verify(mScanStateListener).scanningStartFailed(eq(0));
     }
 
     @Test
     public void testOnSearchStarted() {
         mCallback.onSearchStarted(/* reason= */ 0);
 
-        verify(mController).setScanning(anyBoolean());
+        verify(mScanStateListener).scanningStarted();
     }
 
     @Test
     public void testOnSearchStopFailed() {
         mCallback.onSearchStopFailed(/* reason= */ 0);
 
-        verify(mController).showToast(anyString());
+        verify(mScanStateListener).scanningStopFailed(eq(0));
     }
 
     @Test
     public void testOnSearchStopped() {
         mCallback.onSearchStopped(/* reason= */ 0);
 
-        verify(mController).setScanning(anyBoolean());
+        verify(mScanStateListener).scanningStopped();
     }
 
     @Test
@@ -128,34 +151,27 @@ public class AudioStreamsProgressCategoryCallbackTest {
         when(mMetadata.getBroadcastId()).thenReturn(1);
         mCallback.onSourceAddFailed(mDevice, mMetadata, /* reason= */ 0);
 
-        verify(mController).handleSourceFailedToConnect(1);
+        verify(mSourceStateListener).handleSourceFailedToConnect(1);
     }
 
     @Test
     public void testOnSourceFound() {
         mCallback.onSourceFound(mMetadata);
 
-        verify(mController).handleSourceFound(mMetadata);
+        verify(mSourceStateListener).handleSourceFound(mMetadata);
     }
 
     @Test
     public void testOnSourceLost() {
         mCallback.onSourceLost(/* broadcastId= */ 1);
 
-        verify(mController).handleSourceLost(1);
-    }
-
-    @Test
-    public void testOnSourceRemoveFailed() {
-        mCallback.onSourceRemoveFailed(mDevice, /* sourceId= */ 0, /* reason= */ 0);
-
-        verify(mController).showToast(anyString());
+        verify(mSourceStateListener).handleSourceLost(1);
     }
 
     @Test
     public void testOnSourceRemoved() {
         mCallback.onSourceRemoved(mDevice, /* sourceId= */ 0, /* reason= */ 0);
 
-        verify(mController).handleSourceRemoved();
+        verify(mSourceStateListener).handleSourceRemoved();
     }
 }

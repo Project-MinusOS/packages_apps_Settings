@@ -28,8 +28,7 @@
         android:title="@string/wifi_hotspot_checkbox_text"
         android:summary="@string/wifi_hotspot_off_subtext"
         android:fragment="com.android.settings.wifi.tether.WifiTetherSettings"
-        settings:allowDividerAbove="true"
-        settings:maxLines="2"/>
+        settings:allowDividerAbove="true"/>
 
     <com.android.settingslib.RestrictedSwitchPreference
         android:key="usb_tether_settings"
@@ -52,6 +51,5 @@
     <com.android.settingslib.widget.FooterPreference
         android:key="disabled_on_data_saver"
         android:title="@string/tether_settings_disabled_on_data_saver"
-        android:selectable="false"
         settings:searchable="false"/>
 </PreferenceScreen>

@@ -16,6 +16,8 @@
 
 package com.android.settings.deviceinfo.aboutphone;
 
+import static androidx.core.content.ContextCompat.getMainExecutor;
+
 import android.app.Activity;
 import android.app.settings.SettingsEnums;
 import android.content.Context;
@@ -24,6 +26,9 @@ import android.content.pm.UserInfo;
 import android.os.Bundle;
 import android.os.UserManager;
 import android.view.View;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.android.settings.R;
 import com.android.settings.Utils;
@@ -44,6 +49,7 @@ import com.android.settings.deviceinfo.simstatus.EidStatus;
 import com.android.settings.deviceinfo.simstatus.SimEidPreferenceController;
 import com.android.settings.deviceinfo.simstatus.SimStatusPreferenceController;
 import com.android.settings.deviceinfo.simstatus.SlotSimStatus;
+import com.android.settings.flags.Flags;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.widget.EntityHeaderController;
 import com.android.settingslib.core.AbstractPreferenceController;
@@ -53,6 +59,7 @@ import com.android.settingslib.widget.LayoutPreference;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -110,7 +117,7 @@ public class MyDeviceInfoFragment extends DashboardFragment
             Context context, MyDeviceInfoFragment fragment, Lifecycle lifecycle) {
         final List<AbstractPreferenceController> controllers = new ArrayList<>();
 
-        final ExecutorService executor = (fragment == null) ? null :
+        final Executor executor = (fragment == null) ? getMainExecutor(context) :
                 Executors.newSingleThreadExecutor();
         androidx.lifecycle.Lifecycle lifecycleObject = (fragment == null) ? null :
                 fragment.getLifecycle();
@@ -127,6 +134,9 @@ public class MyDeviceInfoFragment extends DashboardFragment
         controllers.add(new UptimePreferenceController(context, lifecycle));
 
         Consumer<String> imeiInfoList = imeiKey -> {
+            if (Flags.catalystMyDeviceInfoPrefScreen()) {
+                return;
+            }
             ImeiInfoPreferenceController imeiRecord =
                     new ImeiInfoPreferenceController(context, imeiKey);
             imeiRecord.init(fragment, slotSimStatus);
@@ -137,10 +147,10 @@ public class MyDeviceInfoFragment extends DashboardFragment
             imeiInfoList.accept(ImeiInfoPreferenceController.DEFAULT_KEY);
         }
 
-        for (int slotIndex = 0; slotIndex < slotSimStatus.size(); slotIndex ++) {
+        for (int slotIndex = 0; slotIndex < slotSimStatus.size(); slotIndex++) {
             SimStatusPreferenceController slotRecord =
                     new SimStatusPreferenceController(context,
-                    slotSimStatus.getPreferenceKey(slotIndex));
+                            slotSimStatus.getPreferenceKey(slotIndex));
             slotRecord.init(fragment, slotSimStatus);
             controllers.add(slotRecord);
 
@@ -150,12 +160,13 @@ public class MyDeviceInfoFragment extends DashboardFragment
         }
 
         EidStatus eidStatus = new EidStatus(slotSimStatus, context, executor);
-        SimEidPreferenceController simEid = new SimEidPreferenceController(context, KEY_EID_INFO);
+        SimEidPreferenceController simEid = new SimEidPreferenceController(context,
+                KEY_EID_INFO);
         simEid.init(slotSimStatus, eidStatus);
         controllers.add(simEid);
 
-        if (executor != null) {
-            executor.shutdown();
+        if (executor instanceof ExecutorService) {
+            ((ExecutorService) executor).shutdown();
         }
         return controllers;
     }
@@ -209,6 +220,11 @@ public class MyDeviceInfoFragment extends DashboardFragment
     public void onSetDeviceNameConfirm(boolean confirm) {
         final DeviceNamePreferenceController controller = use(DeviceNamePreferenceController.class);
         controller.updateDeviceName(confirm);
+    }
+
+    @Override
+    public @Nullable String getPreferenceScreenBindingKey(@NonNull Context context) {
+        return MyDeviceInfoScreen.KEY;
     }
 
     /**

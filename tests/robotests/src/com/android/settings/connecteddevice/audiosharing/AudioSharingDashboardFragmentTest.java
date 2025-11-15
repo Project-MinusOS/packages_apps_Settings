@@ -39,13 +39,14 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Looper;
 import android.platform.test.flag.junit.SetFlagsRule;
+import android.provider.Settings;
 import android.view.View;
 
+import androidx.preference.PreferenceScreen;
 import androidx.test.core.app.ApplicationProvider;
 
 import com.android.settings.R;
 import com.android.settings.SettingsActivity;
-import com.android.settings.connecteddevice.audiosharing.audiostreams.AudioStreamsCategoryController;
 import com.android.settings.testutils.shadow.ShadowBluetoothAdapter;
 import com.android.settings.testutils.shadow.ShadowFragment;
 import com.android.settings.widget.SettingsMainSwitchBar;
@@ -76,7 +77,6 @@ public class AudioSharingDashboardFragmentTest {
     @Mock private AudioSharingDeviceVolumeGroupController mVolumeGroupController;
     @Mock private AudioSharingCallAudioPreferenceController mCallAudioController;
     @Mock private AudioSharingPlaySoundPreferenceController mPlaySoundController;
-    @Mock private AudioStreamsCategoryController mStreamsCategoryController;
     @Mock private AudioSharingSwitchBarController mSwitchBarController;
     private final Context mContext = ApplicationProvider.getApplicationContext();
     private AudioSharingDashboardFragment mFragment;
@@ -116,6 +116,41 @@ public class AudioSharingDashboardFragmentTest {
     }
 
     @Test
+    public void onResume_setAudioSharingDashboardSettingsGlobal_showAudioSharingDashboard() {
+        mFragment = spy(new AudioSharingDashboardFragment());
+        doReturn(mActivity).when(mFragment).getActivity();
+        doReturn(mContext).when(mFragment).getContext();
+        final PreferenceScreen screen = new PreferenceScreen(mContext, null /* attrs */);
+        doReturn(screen).when(mFragment).getPreferenceScreen();
+        mFragment.onAttach(mContext);
+        mFragment.onResume();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        assertThat(
+                        Settings.Global.getInt(
+                                mContext.getContentResolver(),
+                                AudioSharingDashboardFragment
+                                        .IS_SHOWING_AUDIO_SHARING_DASHBOARD_KEY,
+                                -1))
+                .isEqualTo(AudioSharingDashboardFragment.SHOWING_AUDIO_SHARING_DASHBOARD);
+    }
+
+    @Test
+    public void onPause_setAudioSharingDashboardSettingsGlobal_notShowAudioSharingDashboard() {
+        mFragment.onAttach(mContext);
+        mFragment.onPause();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        assertThat(
+                        Settings.Global.getInt(
+                                mContext.getContentResolver(),
+                                AudioSharingDashboardFragment
+                                        .IS_SHOWING_AUDIO_SHARING_DASHBOARD_KEY,
+                                -1))
+                .isEqualTo(AudioSharingDashboardFragment.NOT_SHOWING_AUDIO_SHARING_DASHBOARD);
+    }
+
+    @Test
     public void onActivityCreated_showSwitchBar() {
         doReturn(mSwitchBar).when(mActivity).getSwitchBar();
         mFragment = spy(new AudioSharingDashboardFragment());
@@ -133,7 +168,6 @@ public class AudioSharingDashboardFragmentTest {
                 mVolumeGroupController,
                 mCallAudioController,
                 mPlaySoundController,
-                mStreamsCategoryController,
                 mSwitchBarController);
         Intent data = new Intent();
         Bundle extras = new Bundle();
@@ -153,7 +187,6 @@ public class AudioSharingDashboardFragmentTest {
                 mVolumeGroupController,
                 mCallAudioController,
                 mPlaySoundController,
-                mStreamsCategoryController,
                 mSwitchBarController);
         Intent data = new Intent();
         Bundle extras = new Bundle();
@@ -172,7 +205,6 @@ public class AudioSharingDashboardFragmentTest {
                 mVolumeGroupController,
                 mCallAudioController,
                 mPlaySoundController,
-                mStreamsCategoryController,
                 mSwitchBarController);
         Intent data = new Intent();
         Bundle extras = new Bundle();
@@ -191,13 +223,11 @@ public class AudioSharingDashboardFragmentTest {
                 mVolumeGroupController,
                 mCallAudioController,
                 mPlaySoundController,
-                mStreamsCategoryController,
                 mSwitchBarController);
         mFragment.onAudioSharingStateChanged();
         verify(mVolumeGroupController).updateVisibility();
         verify(mCallAudioController).updateVisibility();
         verify(mPlaySoundController).updateVisibility();
-        verify(mStreamsCategoryController).updateVisibility();
     }
 
     @Test
@@ -206,7 +236,6 @@ public class AudioSharingDashboardFragmentTest {
                 mVolumeGroupController,
                 mCallAudioController,
                 mPlaySoundController,
-                mStreamsCategoryController,
                 mSwitchBarController);
         mFragment.onAudioSharingProfilesConnected();
         verify(mVolumeGroupController).onAudioSharingProfilesConnected();

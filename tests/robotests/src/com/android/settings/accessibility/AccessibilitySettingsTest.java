@@ -16,6 +16,8 @@
 
 package com.android.settings.accessibility;
 
+import static com.android.internal.accessibility.common.ShortcutConstants.UserShortcutType.SOFTWARE;
+
 import static com.google.common.truth.Truth.assertThat;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -37,9 +39,6 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.database.ContentObserver;
 import android.os.Build;
-import android.platform.test.annotations.DisableFlags;
-import android.platform.test.annotations.EnableFlags;
-import android.platform.test.flag.junit.SetFlagsRule;
 import android.provider.Settings;
 import android.view.accessibility.AccessibilityManager;
 
@@ -111,7 +110,6 @@ public class AccessibilitySettingsTest {
 
     @Rule
     public final MockitoRule mocks = MockitoJUnit.rule();
-    @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
     private final Context mContext = ApplicationProvider.getApplicationContext();
     @Spy
     private final AccessibilityServiceInfo mServiceInfo = getMockAccessibilityServiceInfo(
@@ -119,7 +117,9 @@ public class AccessibilitySettingsTest {
     private ShadowAccessibilityManager mShadowAccessibilityManager;
     @Mock
     private LocalBluetoothManager mLocalBluetoothManager;
+
     private ActivityController<SettingsActivity> mActivityController;
+
     private AccessibilitySettings mFragment;
 
     @Before
@@ -156,22 +156,8 @@ public class AccessibilitySettingsTest {
         assertThat(indexableRawList).isNull();
     }
 
-    @DisableFlags(Flags.FLAG_FIX_A11Y_SETTINGS_SEARCH)
     @Test
-    public void getDynamicRawDataToIndex_hasInstalledA11yFeatures_flagOff_returnEmpty() {
-        mShadowAccessibilityManager.setInstalledAccessibilityServiceList(
-                List.of(mServiceInfo));
-        mShadowAccessibilityManager.setInstalledAccessibilityShortcutListAsUser(
-                List.of(getMockAccessibilityShortcutInfo()));
-
-        assertThat(AccessibilitySettings.SEARCH_INDEX_DATA_PROVIDER.getDynamicRawDataToIndex(
-                mContext, /* enabled= */ true))
-                .isEmpty();
-    }
-
-    @EnableFlags(Flags.FLAG_FIX_A11Y_SETTINGS_SEARCH)
-    @Test
-    public void getDynamicRawDataToIndex_hasInstalledA11yFeatures_flagOn_returnRawDataForInstalledA11yFeatures() {
+    public void getDynamicRawDataToIndex_hasInstalledA11yFeatures_returnRawDataForInstalledA11yFeatures() {
         mShadowAccessibilityManager.setInstalledAccessibilityServiceList(
                 List.of(mServiceInfo));
         mShadowAccessibilityManager.setInstalledAccessibilityShortcutListAsUser(
@@ -376,21 +362,7 @@ public class AccessibilitySettingsTest {
     }
 
     @Test
-    @DisableFlags(android.view.accessibility.Flags.FLAG_A11Y_QS_SHORTCUT)
-    public void onCreate_flagDisabled_haveRegisterToSpecificUrisAndActions() {
-        setupFragment();
-
-        assertUriObserversContainsClazz(Settings.Secure.ACCESSIBILITY_BUTTON_TARGETS,
-                AccessibilitySettingsContentObserver.class).isTrue();
-        assertUriObserversContainsClazz(Settings.Secure.ACCESSIBILITY_SHORTCUT_TARGET_SERVICE,
-                AccessibilitySettingsContentObserver.class).isTrue();
-        assertUriObserversContainsClazz(Settings.Secure.ACCESSIBILITY_QS_TARGETS,
-                AccessibilitySettingsContentObserver.class).isFalse();
-    }
-
-    @Test
-    @EnableFlags(android.view.accessibility.Flags.FLAG_A11Y_QS_SHORTCUT)
-    public void onCreate_flagEnabled_haveRegisterToSpecificUrisAndActions() {
+    public void onCreate_haveRegisterToSpecificUrisAndActions() {
         setupFragment();
 
         assertUriObserversContainsClazz(Settings.Secure.ACCESSIBILITY_BUTTON_TARGETS,
@@ -463,7 +435,6 @@ public class AccessibilitySettingsTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_CHECK_PREBUNDLED_IS_PREINSTALLED)
     public void testNonPreinstalledApp_IncludedInDownloadedCategory() {
         mShadowAccessibilityManager.setInstalledAccessibilityServiceList(
                 List.of(getMockAccessibilityServiceInfo(
@@ -516,9 +487,8 @@ public class AccessibilitySettingsTest {
     }
 
     private String getPreferenceCategory(ComponentName componentName) {
-        return mFragment.mServicePreferenceToPreferenceCategoryMap.get(
-                        mFragment.getPreferenceScreen().findPreference(
-                                componentName.flattenToString())).getKey();
+        return mFragment.getPreferenceScreen().findPreference(
+                componentName.flattenToString()).getParent().getKey();
     }
 
     private AccessibilityServiceInfo getMockAccessibilityServiceInfo(ComponentName componentName) {
@@ -579,9 +549,8 @@ public class AccessibilitySettingsTest {
     }
 
     private void setShortcutEnabled(ComponentName componentName, boolean enabled) {
-        Settings.Secure.putString(mContext.getContentResolver(),
-                Settings.Secure.ACCESSIBILITY_BUTTON_TARGETS,
-                enabled ? componentName.flattenToString() : "");
+        mShadowAccessibilityManager.setAccessibilityShortcutTargets(
+                SOFTWARE, (enabled) ? List.of(componentName.flattenToString()) : List.of());
     }
 
     private BooleanSubject assertUriObserversContainsClazz(

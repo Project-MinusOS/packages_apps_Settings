@@ -42,7 +42,8 @@ public abstract class ConfirmDeviceCredentialBaseActivity extends SettingsActivi
     enum ConfirmCredentialTheme {
         NORMAL,
         DARK,  // TODO(yukl): Clean up DARK theme, as it should no longer be used
-        WORK
+        WORK,  // TODO(lbill): Clean up WORK theme, as it should no longer be used
+        EXPRESSIVE
     }
 
     private boolean mRestoring;
@@ -70,6 +71,9 @@ public abstract class ConfirmDeviceCredentialBaseActivity extends SettingsActivi
         if (UserManager.get(this).isManagedProfile(credentialOwnerUserId)) {
             setTheme(SetupWizardUtils.getTheme(this, getIntent()));
             mConfirmCredentialTheme = ConfirmCredentialTheme.WORK;
+        } else if (ThemeHelper.shouldApplyGlifExpressiveStyle(getApplicationContext())) {
+            ThemeHelper.trySetSuwTheme(this);
+            mConfirmCredentialTheme = ConfirmCredentialTheme.EXPRESSIVE;
         } else if (getIntent().getBooleanExtra(
                 ConfirmDeviceCredentialBaseFragment.DARK_THEME, false)) {
             setTheme(R.style.Theme_ConfirmDeviceCredentialsDark);

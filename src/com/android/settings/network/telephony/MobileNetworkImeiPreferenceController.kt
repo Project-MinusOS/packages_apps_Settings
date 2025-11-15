@@ -29,11 +29,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
 import com.android.settings.R
+import com.android.settings.Utils
 import com.android.settings.deviceinfo.imei.ImeiInfoDialogFragment
 import com.android.settings.flags.Flags
 import com.android.settings.network.SubscriptionInfoListViewModel
-import com.android.settings.network.SubscriptionUtil
-import com.android.settingslib.Utils
 import com.android.settingslib.spa.framework.util.collectLatestWithLifecycle
 import com.android.settingslib.spaprivileged.framework.common.userManager
 import kotlinx.coroutines.Dispatchers
@@ -64,12 +63,12 @@ class MobileNetworkImeiPreferenceController(context: Context, key: String) :
     }
 
     override fun getAvailabilityStatus(subId: Int): Int = when {
-        !Flags.isDualSimOnboardingEnabled() -> CONDITIONALLY_UNAVAILABLE
-        SubscriptionManager.isValidSubscriptionId(subId)
-                && SubscriptionUtil.isSimHardwareVisible(mContext)
-                && mContext.userManager.isAdminUser
-                && !Utils.isWifiOnly(mContext) -> AVAILABLE
-        else -> CONDITIONALLY_UNAVAILABLE
+        !Utils.isMobileDataCapable(mContext)
+            && !Utils.isVoiceCapable(mContext) -> UNSUPPORTED_ON_DEVICE
+        !mContext.userManager.isAdminUser -> DISABLED_FOR_USER
+        !Flags.isDualSimOnboardingEnabled()
+            || !SubscriptionManager.isValidSubscriptionId(subId) -> CONDITIONALLY_UNAVAILABLE
+        else -> AVAILABLE
     }
 
     override fun displayPreference(screen: PreferenceScreen) {

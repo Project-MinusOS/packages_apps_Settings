@@ -24,6 +24,10 @@ import static android.provider.Settings.EXTRA_APP_PACKAGE;
 import static android.provider.Settings.EXTRA_CHANNEL_ID;
 import static android.provider.Settings.EXTRA_CONVERSATION_ID;
 
+import static com.android.settings.notification.history.NotificationHistoryActivity.ROUND_CORNER_BOTTOM;
+import static com.android.settings.notification.history.NotificationHistoryActivity.ROUND_CORNER_CENTER;
+import static com.android.settings.notification.history.NotificationHistoryActivity.ROUND_CORNER_TOP;
+
 import android.annotation.ColorInt;
 import android.annotation.UserIdInt;
 import android.app.ActivityManager;
@@ -74,9 +78,11 @@ public class NotificationSbnAdapter extends
     private List<Integer> mEnabledProfiles = new ArrayList<>();
     private boolean mIsSnoozed;
     private UiEventLogger mUiEventLogger;
+    private ArrayList<Integer> mContentRestrictedUsers = new ArrayList<>();
 
     public NotificationSbnAdapter(Context context, PackageManager pm, UserManager um,
-            boolean isSnoozed, UiEventLogger uiEventLogger) {
+            boolean isSnoozed, UiEventLogger uiEventLogger,
+            ArrayList<Integer> contentRestrictedUsers) {
         mContext = context;
         mPm = pm;
         mUserBadgeCache = new HashMap<>();
@@ -97,6 +103,7 @@ public class NotificationSbnAdapter extends
         // If true, this is the panel for snoozed notifs, otherwise the one for dismissed notifs.
         mIsSnoozed = isSnoozed;
         mUiEventLogger = uiEventLogger;
+        mContentRestrictedUsers = contentRestrictedUsers;
     }
 
     @Override
@@ -111,13 +118,27 @@ public class NotificationSbnAdapter extends
             int position) {
         final StatusBarNotification sbn = mValues.get(position);
         if (sbn != null) {
+            int cornerType = ROUND_CORNER_CENTER;
+            if (position == (getItemCount() - 1)) {
+                cornerType |= ROUND_CORNER_BOTTOM;
+            }
+            if (position == 0) {
+                cornerType |= ROUND_CORNER_TOP;
+            }
+            int backgroundRes = NotificationHistoryActivity.getRoundCornerDrawableRes(cornerType);
+            holder.itemView.setBackgroundResource(backgroundRes);
+
             holder.setIconBackground(loadBackground(sbn));
             holder.setIcon(loadIcon(sbn));
             holder.setPackageLabel(loadPackageLabel(sbn.getPackageName()).toString());
-            holder.setTitle(getTitleString(sbn.getNotification()));
-            holder.setSummary(getTextString(mContext, sbn.getNotification()));
+            if (mContentRestrictedUsers.contains(sbn.getNormalizedUserId())) {
+                holder.setSummary(mContext.getString(
+                        com.android.internal.R.string.notification_hidden_text));
+            } else {
+                holder.setTitle(getTitleString(sbn.getNotification()));
+                holder.setSummary(getTextString(mContext, sbn.getNotification()));
+            }
             holder.setPostedTime(sbn.getPostTime());
-            holder.setDividerVisible(position < (mValues.size() -1));
             int userId = normalizeUserId(sbn);
             if (!mUserBadgeCache.containsKey(userId)) {
                 Drawable profile = mContext.getPackageManager().getUserBadgeForDensityNoBackground(

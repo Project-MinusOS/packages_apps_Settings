@@ -16,7 +16,6 @@
 
 package com.android.settings.notification.zen;
 
-import android.app.Flags;
 import android.app.NotificationManager;
 import android.app.settings.SettingsEnums;
 import android.content.Context;
@@ -69,9 +68,6 @@ public class ZenAccessSettings extends EmptyTextSettings implements
         mContext = getActivity();
         mPkgMan = mContext.getPackageManager();
         mNoMan = mContext.getSystemService(NotificationManager.class);
-        requireActivity().setTitle(Flags.modesApi() && Flags.modesUi()
-                ? R.string.manage_zen_modes_access_title
-                : R.string.manage_zen_access_title);
         getSettingsLifecycle().addObserver(
                 new ZenAccessSettingObserverMixin(getContext(), this /* listener */));
     }
@@ -79,9 +75,7 @@ public class ZenAccessSettings extends EmptyTextSettings implements
     @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        setEmptyText(Flags.modesApi() && Flags.modesUi()
-                ? R.string.zen_modes_access_empty_text
-                : R.string.zen_access_empty_text);
+        setEmptyText(R.string.zen_modes_access_empty_text);
     }
 
     @Override
@@ -145,9 +139,7 @@ public class ZenAccessSettings extends EmptyTextSettings implements
             pref.setOnPreferenceClickListener(preference -> {
                 AppInfoBase.startAppInfoFragment(
                         ZenAccessDetails.class  /* fragment */,
-                        getString(Flags.modesApi() && Flags.modesUi()
-                                ? R.string.manage_zen_modes_access_title
-                                : R.string.manage_zen_access_title),
+                        getString(R.string.manage_zen_modes_access_title),
                         pkg,
                         app.uid,
                         this /* source */,

@@ -17,6 +17,7 @@
 package com.android.settings.deviceinfo;
 
 import android.content.Context;
+import android.os.UserManager;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -28,6 +29,7 @@ import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
+import com.android.settings.Utils;
 import com.android.settings.core.BasePreferenceController;
 import com.android.settings.network.SubscriptionUtil;
 
@@ -51,16 +53,22 @@ public class PhoneNumberPreferenceController extends BasePreferenceController {
 
     @Override
     public int getAvailabilityStatus() {
-        return SubscriptionUtil.isSimHardwareVisible(mContext) ?
-                AVAILABLE : UNSUPPORTED_ON_DEVICE;
+        if (!Utils.isMobileDataCapable(mContext) && !Utils.isVoiceCapable(mContext)) {
+            return UNSUPPORTED_ON_DEVICE;
+        }
+        if (!mContext.getSystemService(UserManager.class).isAdminUser()) {
+            return DISABLED_FOR_USER;
+        }
+        return AVAILABLE;
     }
 
     @Override
     public void displayPreference(PreferenceScreen screen) {
         super.displayPreference(screen);
-        if (!SubscriptionUtil.isSimHardwareVisible(mContext)) {
+        if (!isAvailable()) {
             return;
         }
+
         final Preference preference = screen.findPreference(getPreferenceKey());
         final PreferenceCategory category = screen.findPreference(KEY_PREFERENCE_CATEGORY);
         mPreferenceList.add(preference);
@@ -84,7 +92,7 @@ public class PhoneNumberPreferenceController extends BasePreferenceController {
         for (int simSlotNumber = 0; simSlotNumber < mPreferenceList.size(); simSlotNumber++) {
             final Preference simStatusPreference = mPreferenceList.get(simSlotNumber);
             simStatusPreference.setTitle(getPreferenceTitle(simSlotNumber));
-            simStatusPreference.setSummary(getPhoneNumber(simSlotNumber));
+            setPhoneNumber(simSlotNumber);
         }
     }
 
@@ -93,24 +101,15 @@ public class PhoneNumberPreferenceController extends BasePreferenceController {
         return true;
     }
 
-    private CharSequence getFirstPhoneNumber() {
-        final List<SubscriptionInfo> subscriptionInfoList =
-                mSubscriptionManager.getActiveSubscriptionInfoList();
-        if (subscriptionInfoList == null || subscriptionInfoList.isEmpty()) {
-            return mContext.getText(R.string.device_info_default);
-        }
-
-        // For now, We only return first result for slice view.
-        return getFormattedPhoneNumber(subscriptionInfoList.get(0));
-    }
-
-    private CharSequence getPhoneNumber(int simSlot) {
+    private void setPhoneNumber(int simSlot) {
+        final Preference simStatusPreference = mPreferenceList.get(simSlot);
         final SubscriptionInfo subscriptionInfo = getSubscriptionInfo(simSlot);
+        simStatusPreference.setEnabled(subscriptionInfo != null);
         if (subscriptionInfo == null) {
-            return mContext.getText(R.string.device_info_default);
+            simStatusPreference.setSummary(mContext.getString(R.string.device_info_not_available));
+        } else {
+            simStatusPreference.setSummary(getFormattedPhoneNumber(subscriptionInfo));
         }
-
-        return getFormattedPhoneNumber(subscriptionInfo);
     }
 
     private CharSequence getPreferenceTitle(int simSlot) {

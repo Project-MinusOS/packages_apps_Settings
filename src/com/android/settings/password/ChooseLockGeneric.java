@@ -28,6 +28,7 @@ import static android.app.admin.DevicePolicyResources.Strings.Settings.WORK_PROF
 import static android.app.admin.DevicePolicyResources.Strings.Settings.WORK_PROFILE_IT_ADMIN_CANT_RESET_SCREEN_LOCK_ACTION;
 import static android.app.admin.DevicePolicyResources.Strings.Settings.WORK_PROFILE_SCREEN_LOCK_SETUP_MESSAGE;
 
+import static com.android.settings.biometrics.BiometricEnrollBase.BIOMETRIC_AUTH_REQUEST;
 import static com.android.settings.password.ChooseLockPassword.ChooseLockPasswordFragment.RESULT_FINISHED;
 import static com.android.settings.password.ChooseLockSettingsHelper.EXTRA_KEY_CALLER_APP_NAME;
 import static com.android.settings.password.ChooseLockSettingsHelper.EXTRA_KEY_CHOOSE_LOCK_SCREEN_DESCRIPTION;
@@ -71,6 +72,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.preference.Preference;
+import androidx.preference.PreferenceCategory;
 import androidx.preference.PreferenceScreen;
 
 import com.android.internal.widget.LockPatternUtils;
@@ -87,12 +89,22 @@ import com.android.settings.biometrics.BiometricUtils;
 import com.android.settings.biometrics.IdentityCheckBiometricErrorDialog;
 import com.android.settings.core.SubSettingLauncher;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
+import com.android.settings.flags.Flags;
 import com.android.settings.safetycenter.LockScreenSafetySource;
 import com.android.settings.search.SearchFeatureProvider;
+import com.android.settings.security.screenlock.AutoPinConfirmPreferenceController;
+import com.android.settings.security.screenlock.LockAfterTimeoutPreferenceController;
+import com.android.settings.security.screenlock.PatternVisiblePreferenceController;
+import com.android.settings.security.screenlock.PinPrivacyPreferenceController;
+import com.android.settings.security.screenlock.PowerButtonInstantLockPreferenceController;
 import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.core.AbstractPreferenceController;
 import com.android.settingslib.widget.FooterPreference;
 
 import com.google.android.setupcompat.util.WizardManagerHelper;
+import com.google.android.setupdesign.util.ThemeHelper;
+
+import java.util.ArrayList;
 
 /**
  * Activity class that provides a generic implementation for displaying options to choose a lock
@@ -131,6 +143,8 @@ public class ChooseLockGeneric extends SettingsActivity {
         private static final String WAITING_FOR_CONFIRMATION = "waiting_for_confirmation";
         public static final String HIDE_INSECURE_OPTIONS = "hide_insecure_options";
         public static final String TAG_FRP_WARNING_DIALOG = "frp_warning_dialog";
+
+        public static final String KEY_LOCK_SETTINGS = "unlock_settings";
         public static final String KEY_LOCK_SETTINGS_FOOTER ="lock_settings_footer";
 
         /**
@@ -188,6 +202,9 @@ public class ChooseLockGeneric extends SettingsActivity {
         private int mUnificationProfileId = UserHandle.USER_NULL;
         private LockscreenCredential mUnificationProfileCredential;
 
+        @Nullable
+        private AutoPinConfirmPreferenceController mAutoPinConfirmPreferenceController;
+
         /**
          * From intent extra {@link ChooseLockSettingsHelper#EXTRA_KEY_REQUESTED_MIN_COMPLEXITY}.
          * Only contains complexity requested by calling app, not complexity enforced by device
@@ -213,6 +230,9 @@ public class ChooseLockGeneric extends SettingsActivity {
         private int mExtraLockScreenDescriptionResId;
         private boolean mWaitingForBiometricEnrollment = false;
         private boolean mEnrollFingerPrintOnly = false;
+
+        private final ArrayList<AbstractPreferenceController> mUnlockSettingsControllers =
+                new ArrayList<>();
 
         @Override
         public int getMetricsCategory() {
@@ -438,6 +458,9 @@ public class ChooseLockGeneric extends SettingsActivity {
                 }
             } else {
                 textView.setText("");
+                if (ThemeHelper.shouldApplyGlifExpressiveStyle(getContext())) {
+                    textView.setVisibility(View.GONE);
+                }
             }
         }
 
@@ -476,6 +499,16 @@ public class ChooseLockGeneric extends SettingsActivity {
                 }
                 startActivityForResult(chooseLockGenericIntent, SKIP_FINGERPRINT_REQUEST);
                 return true;
+            } else if (mAutoPinConfirmPreferenceController != null
+                    && mAutoPinConfirmPreferenceController.getPreferenceKey().equals(key)) {
+                final boolean enabled = !mLockPatternUtils.isAutoPinConfirmEnabled(mUserId);
+                // update the auto pin confirm setting.
+                mLockPatternUtils.setAutoPinConfirm(enabled, mUserId);
+                // store the pin length info to disk; If it fails, reset the setting to prev state.
+                if (!mLockPatternUtils.refreshStoredPinLength(mUserId)) {
+                    mLockPatternUtils.setAutoPinConfirm(!enabled, mUserId);
+                }
+                return true;
             } else {
                 return setUnlockMethod(key);
             }
@@ -496,7 +529,13 @@ public class ChooseLockGeneric extends SettingsActivity {
                         Utils.requestBiometricAuthenticationForMandatoryBiometrics(getActivity(),
                                 false /* biometricsAuthenticationRequested */,
                                 mUserId);
-                if (biometricAuthStatus == Utils.BiometricStatus.OK) {
+                if (android.hardware.biometrics.Flags.bpFallbackOptions()) {
+                    if (biometricAuthStatus != Utils.BiometricStatus.NOT_ACTIVE) {
+                        Utils.launchBiometricPromptForMandatoryBiometrics(this,
+                                BIOMETRIC_AUTH_REQUEST,
+                                mUserId, true /* hideBackground */);
+                    }
+                } else if (biometricAuthStatus == Utils.BiometricStatus.OK) {
                     Utils.launchBiometricPromptForMandatoryBiometrics(this,
                             BIOMETRIC_AUTH_REQUEST,
                             mUserId, true /* hideBackground */);
@@ -652,6 +691,12 @@ public class ChooseLockGeneric extends SettingsActivity {
                 footer.setVisible(false);
             }
 
+            if (Flags.biometricsOnboardingEducation()
+                    && !WizardManagerHelper.isAnySetupWizard(getIntent())) {
+                buildUnlockSettingsPreferenceControllers();
+                setUpUnlockSettingsPreference();
+            }
+
             // Used for testing purposes
             findPreference(ScreenLockType.NONE.preferenceKey).setViewId(R.id.lock_none);
             findPreference(KEY_SKIP_FINGERPRINT).setViewId(R.id.lock_none);
@@ -659,6 +704,40 @@ public class ChooseLockGeneric extends SettingsActivity {
             findPreference(KEY_SKIP_BIOMETRICS).setViewId(R.id.lock_none);
             findPreference(ScreenLockType.PIN.preferenceKey).setViewId(R.id.lock_pin);
             findPreference(ScreenLockType.PASSWORD.preferenceKey).setViewId(R.id.lock_password);
+        }
+
+        private void buildUnlockSettingsPreferenceControllers() {
+            mUnlockSettingsControllers.add(new PatternVisiblePreferenceController(
+                    getContext(), mUserId, mLockPatternUtils));
+            mUnlockSettingsControllers.add(new PinPrivacyPreferenceController(
+                    getContext(), mUserId, mLockPatternUtils));
+            mUnlockSettingsControllers.add(new PowerButtonInstantLockPreferenceController(
+                    getContext(), mUserId, mLockPatternUtils));
+            mUnlockSettingsControllers.add(new LockAfterTimeoutPreferenceController(
+                    getContext(), mUserId, mLockPatternUtils));
+            mAutoPinConfirmPreferenceController = new AutoPinConfirmPreferenceController(
+                    getContext(), mUserId, mLockPatternUtils, this);
+            mUnlockSettingsControllers.add(mAutoPinConfirmPreferenceController);
+        }
+
+        private void setUpUnlockSettingsPreference() {
+            boolean showUnlockSettingsCategory = false;
+            for (AbstractPreferenceController controller : mUnlockSettingsControllers) {
+                final boolean isAvailable = controller.isAvailable();
+                final Preference preference = findPreference(controller.getPreferenceKey());
+                preference.setVisible(isAvailable);
+                if (!isAvailable) {
+                    continue;
+                }
+                if (!(controller instanceof AutoPinConfirmPreferenceController)) {
+                    preference.setOnPreferenceChangeListener(
+                            (Preference.OnPreferenceChangeListener) controller);
+                }
+                controller.updateState(preference);
+                showUnlockSettingsCategory = true;
+            }
+            final PreferenceCategory unlockSettingsCategory = findPreference(KEY_LOCK_SETTINGS);
+            unlockSettingsCategory.setVisible(showUnlockSettingsCategory);
         }
 
         private String getFooterString() {

@@ -32,6 +32,7 @@ import androidx.preference.PreferenceViewHolder;
 import com.android.settings.R;
 import com.android.settings.wifi.dpp.WifiDppUtils;
 import com.android.settingslib.RestrictedPreference;
+import com.android.settingslib.widget.SettingsThemeHelper;
 import com.android.settingslib.wifi.WifiEnterpriseRestrictionUtils;
 
 /**
@@ -49,7 +50,10 @@ public class AddWifiNetworkPreference extends RestrictedPreference {
 
     public AddWifiNetworkPreference(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
-        setLayoutResource(com.android.settingslib.R.layout.preference_access_point);
+        int layoutResId = SettingsThemeHelper.isExpressiveTheme(getContext())
+                ? com.android.settingslib.R.layout.preference_access_point_expressive
+                : com.android.settingslib.R.layout.preference_access_point;
+        setLayoutResource(layoutResId);
         setWidgetLayoutResource(R.layout.wifi_button_preference_widget);
         setIcon(R.drawable.ic_add_24dp);
         setTitle(R.string.wifi_add_network);

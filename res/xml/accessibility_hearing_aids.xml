@@ -20,7 +20,10 @@
     android:title="@string/accessibility_hearingaid_title">
 
     <com.android.settingslib.widget.TopIntroPreference
-        android:title="@string/accessibility_hearingaid_intro" />
+        android:key="hearing_device_intro"
+        android:title="@string/accessibility_hearingaid_intro"
+        settings:searchable="false"
+        settings:controller="com.android.settings.accessibility.HearingDeviceIntroPreferenceController"/>
 
     <PreferenceCategory
         android:key="available_hearing_devices"
@@ -53,6 +56,12 @@
             android:fragment="com.android.settings.accessibility.AccessibilityAudioRoutingFragment"
             settings:controller="com.android.settings.accessibility.HearingAidAudioRoutingPreferenceController"/>
 
+        <com.android.settings.accessibility.ShortcutPreference
+            android:key="hearing_aids_shortcut_preference"
+            android:title="@string/accessibility_hearing_device_shortcut_title"
+            android:persistent="false"
+            settings:controller="com.android.settings.accessibility.ToggleShortcutPreferenceController"/>
+
         <SwitchPreferenceCompat
             android:key="hearing_aid_compatibility"
             android:order="30"
@@ -64,7 +73,6 @@
 
     <com.android.settings.accessibility.AccessibilityFooterPreference
         android:key="hearing_device_footer"
-        android:title="@string/accessibility_hearing_device_footer_summary"
         android:selectable="false"
         settings:searchable="false"
         settings:controller="com.android.settings.accessibility.HearingDeviceFooterPreferenceController"/>

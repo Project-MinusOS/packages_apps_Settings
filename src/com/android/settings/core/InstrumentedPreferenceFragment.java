@@ -21,12 +21,8 @@ import static com.android.internal.jank.InteractionJankMonitor.Configuration;
 
 import android.content.Context;
 import android.os.Bundle;
-import android.text.TextUtils;
-import android.util.Log;
 
-import androidx.annotation.XmlRes;
 import androidx.preference.Preference;
-import androidx.preference.PreferenceScreen;
 import androidx.preference.TwoStatePreference;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -86,6 +82,9 @@ public abstract class InstrumentedPreferenceFragment extends ObservablePreferenc
         if (recyclerView != null) {
             mOnScrollListener = new OnScrollListener(getClass().getName());
             recyclerView.addOnScrollListener(mOnScrollListener);
+
+            // Scrollbar should only be visible when the user is scrolling.
+            recyclerView.setVerticalScrollBarEnabled(false);
         }
         super.onResume();
     }
@@ -106,12 +105,6 @@ public abstract class InstrumentedPreferenceFragment extends ObservablePreferenc
         if (resId > 0) {
             addPreferencesFromResource(resId);
         }
-    }
-
-    @Override
-    public void addPreferencesFromResource(@XmlRes int preferencesResId) {
-        super.addPreferencesFromResource(preferencesResId);
-        updateActivityTitleWithScreenTitle(getPreferenceScreen());
     }
 
     @Override
@@ -147,17 +140,6 @@ public abstract class InstrumentedPreferenceFragment extends ObservablePreferenc
         mMetricsFeatureProvider.logClickedPreference(preference, getMetricsCategory());
     }
 
-    private void updateActivityTitleWithScreenTitle(PreferenceScreen screen) {
-        if (screen != null) {
-            final CharSequence title = screen.getTitle();
-            if (!TextUtils.isEmpty(title)) {
-                getActivity().setTitle(title);
-            } else {
-                Log.w(TAG, "Screen title missing for fragment " + this.getClass().getName());
-            }
-        }
-    }
-
     private static final class OnScrollListener extends RecyclerView.OnScrollListener {
         private final InteractionJankMonitor mMonitor = InteractionJankMonitor.getInstance();
         private final String mClassName;
@@ -174,9 +156,13 @@ public abstract class InstrumentedPreferenceFragment extends ObservablePreferenc
                             Configuration.Builder.withView(CUJ_SETTINGS_PAGE_SCROLL, recyclerView)
                                     .setTag(mClassName);
                     mMonitor.begin(builder);
+                    recyclerView.setVerticalScrollBarEnabled(true);
                     break;
                 case RecyclerView.SCROLL_STATE_IDLE:
                     mMonitor.end(CUJ_SETTINGS_PAGE_SCROLL);
+                    // Disable scrollbar when the user is not scrolling. This is to avoid the
+                    // scrollbar from being visible when the user is changing a setting.
+                    recyclerView.setVerticalScrollBarEnabled(false);
                     break;
                 default:
             }

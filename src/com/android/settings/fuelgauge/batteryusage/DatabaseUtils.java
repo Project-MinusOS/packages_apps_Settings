@@ -31,8 +31,6 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.BatteryManager;
 import android.os.BatteryUsageStats;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.UserManager;
@@ -40,12 +38,14 @@ import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import com.android.settings.fuelgauge.BatteryUsageHistoricalLogEntry.Action;
 import com.android.settings.fuelgauge.BatteryUtils;
 import com.android.settings.fuelgauge.batteryusage.bugreport.BatteryUsageLogUtils;
 import com.android.settings.fuelgauge.batteryusage.db.BatteryStateDatabase;
+import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.fuelgauge.BatteryStatus;
 
 import java.io.PrintWriter;
@@ -66,15 +66,8 @@ import java.util.stream.Collectors;
 public final class DatabaseUtils {
     private static final String TAG = "DatabaseUtils";
     private static final String SHARED_PREFS_FILE = "battery_usage_shared_prefs";
-    private static final boolean EXPLICIT_CLEAR_MEMORY_ENABLED = false;
-
-    /** Clear memory threshold for device booting phase. */
-    private static final long CLEAR_MEMORY_THRESHOLD_MS = Duration.ofMinutes(5).toMillis();
-
-    private static final long CLEAR_MEMORY_DELAYED_MS = Duration.ofSeconds(2).toMillis();
     private static final long INVALID_TIMESTAMP = 0L;
 
-    static final int DATA_RETENTION_INTERVAL_DAY = 9;
     static final String KEY_LAST_LOAD_FULL_CHARGE_TIME = "last_load_full_charge_time";
     static final String KEY_LAST_UPLOAD_FULL_CHARGE_TIME = "last_upload_full_charge_time";
     static final String KEY_LAST_USAGE_SOURCE = "last_usage_source";
@@ -475,11 +468,14 @@ public final class DatabaseUtils {
         AsyncTask.execute(
                 () -> {
                     try {
+                        final int dataRetentionDays =
+                                FeatureFactory.getFeatureFactory()
+                                        .getPowerUsageFeatureProvider().getDataRetentionDays();
                         final BatteryStateDatabase database =
                                 BatteryStateDatabase.getInstance(context.getApplicationContext());
                         final long earliestTimestamp =
                                 Clock.systemUTC().millis()
-                                        - Duration.ofDays(DATA_RETENTION_INTERVAL_DAY).toMillis();
+                                        - Duration.ofDays(dataRetentionDays).toMillis();
                         database.appUsageEventDao().clearAllBefore(earliestTimestamp);
                         database.batteryEventDao().clearAllBefore(earliestTimestamp);
                         database.batteryStateDao().clearAllBefore(earliestTimestamp);
@@ -593,7 +589,6 @@ public final class DatabaseUtils {
                 String.format(
                         "sendAppUsageEventData() size=%d in %d/ms",
                         size, (System.currentTimeMillis() - startTime)));
-        clearMemory();
         return valuesList;
     }
 
@@ -613,7 +608,6 @@ public final class DatabaseUtils {
                 String.format(
                         "sendBatteryEventData() in %d/ms",
                         (System.currentTimeMillis() - startTime)));
-        clearMemory();
         return contentValues;
     }
 
@@ -647,7 +641,6 @@ public final class DatabaseUtils {
                 String.format(
                         "sendBatteryEventData() size=%d in %d/ms",
                         size, (System.currentTimeMillis() - startTime)));
-        clearMemory();
         return valuesList;
     }
 
@@ -681,21 +674,19 @@ public final class DatabaseUtils {
                 String.format(
                         "sendBatteryUsageSlotData() size=%d in %d/ms",
                         size, (System.currentTimeMillis() - startTime)));
-        clearMemory();
         return valuesList;
     }
 
     static List<ContentValues> sendBatteryEntryData(
             final Context context,
             final long snapshotTimestamp,
-            final List<BatteryEntry> batteryEntryList,
+            @Nullable final List<BatteryEntry> batteryEntryList,
             final BatteryUsageStats batteryUsageStats,
             final boolean isFullChargeStart) {
         final long startTime = System.currentTimeMillis();
         final Intent intent = BatteryUtils.getBatteryIntent(context);
         if (intent == null) {
             Log.e(TAG, "sendBatteryEntryData(): cannot fetch battery intent");
-            clearMemory();
             return null;
         }
         final int batteryLevel = BatteryStatus.getBatteryLevel(intent);
@@ -796,7 +787,6 @@ public final class DatabaseUtils {
         if (isFullChargeStart) {
             recordDateTime(context, KEY_LAST_UPLOAD_FULL_CHARGE_TIME);
         }
-        clearMemory();
         return valuesList;
     }
 
@@ -991,21 +981,5 @@ public final class DatabaseUtils {
         if (results != null) {
             writer.println(String.format("\t\t%s: %s", prefix, results.toString()));
         }
-    }
-
-    private static void clearMemory() {
-        if (!EXPLICIT_CLEAR_MEMORY_ENABLED
-                || SystemClock.uptimeMillis() > CLEAR_MEMORY_THRESHOLD_MS) {
-            return;
-        }
-        final Handler mainHandler = new Handler(Looper.getMainLooper());
-        mainHandler.postDelayed(
-                () -> {
-                    System.gc();
-                    System.runFinalization();
-                    System.gc();
-                    Log.w(TAG, "invoke clearMemory()");
-                },
-                CLEAR_MEMORY_DELAYED_MS);
     }
 }

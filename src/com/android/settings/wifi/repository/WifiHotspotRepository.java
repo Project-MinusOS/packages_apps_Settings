@@ -356,10 +356,11 @@ public class WifiHotspotRepository {
                 log("setSpeedType(), setBand(BAND_2GHZ)");
                 configBuilder.setBand(BAND_2GHZ);
             }
-            // Set the security type back to WPA2/WPA3 if we're moving from 6GHz to something else.
-            if ((config.getBand() & BAND_6GHZ) != 0) {
-                configBuilder.setPassphrase(
-                        generatePassword(config), SECURITY_TYPE_WPA3_SAE_TRANSITION);
+            // Set the security type back to WPA2/WPA3 if the password is at least 8 characters and
+            // we're moving from 6GHz to something else.
+            String passphrase = generatePassword(config);
+            if ((passphrase.length() >= 8) && (config.getBand() & BAND_6GHZ) != 0) {
+                configBuilder.setPassphrase(passphrase, SECURITY_TYPE_WPA3_SAE_TRANSITION);
             }
         }
         setSoftApConfiguration(configBuilder.build());
@@ -474,7 +475,7 @@ public class WifiHotspotRepository {
         try {
             List<WifiAvailableChannel> channels =
                     mWifiManager.getAllowedChannels(sapBand.band, OP_MODE_SAP);
-            log("isChannelAvailable(), band:" + sapBand.band + ", channels:" + channels);
+            log("isChannelAvailable(), band:" + sapBand.band + ", allowedChannels:" + channels);
             sapBand.hasChannels = (channels != null && channels.size() > 0);
             sapBand.isChannelsUnsupported = false;
         } catch (IllegalArgumentException e) {
@@ -609,7 +610,7 @@ public class WifiHotspotRepository {
     }
 
     private void stopTethering() {
-        log("startTethering()");
+        log("stopTethering()");
         mTetheringManager.stopTethering(TETHERING_WIFI);
     }
 

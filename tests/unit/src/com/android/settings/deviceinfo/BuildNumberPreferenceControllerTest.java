@@ -33,7 +33,6 @@ import android.hardware.biometrics.BiometricManager;
 import android.hardware.biometrics.Flags;
 import android.os.Looper;
 import android.os.UserManager;
-import android.platform.test.annotations.RequiresFlagsDisabled;
 import android.platform.test.annotations.RequiresFlagsEnabled;
 import android.platform.test.flag.junit.CheckFlagsRule;
 import android.platform.test.flag.junit.DeviceFlagsValueProvider;
@@ -93,7 +92,7 @@ public class BuildNumberPreferenceControllerTest {
         doReturn(mUserManager).when(mContext).getSystemService(Context.USER_SERVICE);
         when(mContext.getSystemService(BiometricManager.class)).thenReturn(mBiometricManager);
         when(mBiometricManager.canAuthenticate(mContext.getUserId(),
-                BiometricManager.Authenticators.MANDATORY_BIOMETRICS))
+                BiometricManager.Authenticators.IDENTITY_CHECK))
                 .thenReturn(BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE);
 
         mFactory = FakeFeatureFactory.setupForTest();
@@ -194,26 +193,10 @@ public class BuildNumberPreferenceControllerTest {
     }
 
     @Test
-    @UiThreadTest
-    @RequiresFlagsDisabled(Flags.FLAG_MANDATORY_BIOMETRICS)
-    public void onActivityResult_confirmPasswordRequestCompleted_enableDevPref() {
-        when(mUserManager.isAdminUser()).thenReturn(true);
-
-        final boolean activityResultHandled = mController.onActivityResult(
-                BuildNumberPreferenceController.REQUEST_CONFIRM_PASSWORD_FOR_DEV_PREF,
-                Activity.RESULT_OK,
-                null);
-
-        assertThat(activityResultHandled).isTrue();
-        assertThat(DevelopmentSettingsEnabler.isDevelopmentSettingsEnabled(mContext)).isTrue();
-    }
-
-    @Test
-    @RequiresFlagsEnabled(Flags.FLAG_MANDATORY_BIOMETRICS)
     public void onActivityResult_confirmPasswordRequestCompleted_launchBiometricPrompt() {
         when(mUserManager.isAdminUser()).thenReturn(true);
         when(mBiometricManager.canAuthenticate(mContext.getUserId(),
-                BiometricManager.Authenticators.MANDATORY_BIOMETRICS))
+                BiometricManager.Authenticators.IDENTITY_CHECK))
                 .thenReturn(BiometricManager.BIOMETRIC_SUCCESS);
 
         final boolean activityResultHandled = mController.onActivityResult(
@@ -229,12 +212,11 @@ public class BuildNumberPreferenceControllerTest {
 
     @Test
     @UiThreadTest
-    @RequiresFlagsEnabled(Flags.FLAG_MANDATORY_BIOMETRICS)
     public void onActivityResult_confirmPasswordRequestCompleted_mandatoryBiometricsError() {
         when(mUserManager.isAdminUser()).thenReturn(true);
         when(mBiometricManager.canAuthenticate(mContext.getUserId(),
-                BiometricManager.Authenticators.MANDATORY_BIOMETRICS))
-                .thenReturn(BiometricManager.BIOMETRIC_ERROR_MANDATORY_NOT_ACTIVE);
+                BiometricManager.Authenticators.IDENTITY_CHECK))
+                .thenReturn(BiometricManager.BIOMETRIC_ERROR_IDENTITY_CHECK_NOT_ACTIVE);
 
         final boolean activityResultHandled = mController.onActivityResult(
                 BuildNumberPreferenceController.REQUEST_CONFIRM_PASSWORD_FOR_DEV_PREF,
@@ -243,6 +225,25 @@ public class BuildNumberPreferenceControllerTest {
 
         assertThat(activityResultHandled).isTrue();
         verify(mFragment, never()).startActivityForResult(any(),
+                eq(BuildNumberPreferenceController.REQUEST_IDENTITY_CHECK_FOR_DEV_PREF));
+    }
+
+    @Test
+    @UiThreadTest
+    @RequiresFlagsEnabled(Flags.FLAG_BP_FALLBACK_OPTIONS)
+    public void onActivityResult_confirmPasswordRequestCompleted_biometricHardwareError() {
+        when(mUserManager.isAdminUser()).thenReturn(true);
+        when(mBiometricManager.canAuthenticate(mContext.getUserId(),
+                BiometricManager.Authenticators.IDENTITY_CHECK))
+                .thenReturn(BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE);
+
+        final boolean activityResultHandled = mController.onActivityResult(
+                BuildNumberPreferenceController.REQUEST_CONFIRM_PASSWORD_FOR_DEV_PREF,
+                Activity.RESULT_OK,
+                null);
+
+        assertThat(activityResultHandled).isTrue();
+        verify(mFragment).startActivityForResult(any(),
                 eq(BuildNumberPreferenceController.REQUEST_IDENTITY_CHECK_FOR_DEV_PREF));
     }
 

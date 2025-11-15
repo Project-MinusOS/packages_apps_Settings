@@ -34,7 +34,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.app.Flags;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -43,7 +42,7 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.platform.test.annotations.EnableFlags;
+import android.os.UserHandle;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.service.notification.ConversationChannelWrapper;
 import android.service.notification.ZenPolicy;
@@ -73,7 +72,6 @@ import org.robolectric.RuntimeEnvironment;
 
 import java.util.Collection;
 
-@EnableFlags(Flags.FLAG_MODES_UI)
 @RunWith(RobolectricTestRunner.class)
 public final class ZenModePeopleLinkPreferenceControllerTest {
 
@@ -119,14 +117,18 @@ public final class ZenModePeopleLinkPreferenceControllerTest {
 
     @Test
     public void updateState_dnd_enabled() {
-        ZenMode dnd = TestModeBuilder.MANUAL_DND_ACTIVE;
+        ZenMode dnd = TestModeBuilder.MANUAL_DND;
         mController.updateState(mPreference, dnd);
         assertThat(mPreference.isEnabled()).isTrue();
     }
 
     @Test
     public void updateState_specialDnd_disabled() {
-        ZenMode specialDnd = TestModeBuilder.manualDnd(INTERRUPTION_FILTER_NONE, true);
+        ZenMode specialDnd = new TestModeBuilder()
+                .makeManualDnd()
+                .setInterruptionFilter(INTERRUPTION_FILTER_NONE)
+                .setActive(true)
+                .build();
         mController.updateState(mPreference, specialDnd);
         assertThat(mPreference.isEnabled()).isFalse();
     }
@@ -229,13 +231,13 @@ public final class ZenModePeopleLinkPreferenceControllerTest {
 
     private void setUpContacts(Collection<Integer> allIds, Collection<Integer> starredIds) {
         when(mHelperBackend.getAllContacts()).thenReturn(ImmutableList.copyOf(
-                allIds.stream()
-                        .map(id -> new Contact(id, "#" + id, Uri.parse("photo://" + id)))
+                allIds.stream().map(id -> new Contact(UserHandle.SYSTEM, id, "#" + id,
+                                Uri.parse("photo://" + id)))
                         .toList()));
 
         when(mHelperBackend.getStarredContacts()).thenReturn(ImmutableList.copyOf(
-                starredIds.stream()
-                        .map(id -> new Contact(id, "#" + id, Uri.parse("photo://" + id)))
+                starredIds.stream().map(id -> new Contact(UserHandle.SYSTEM, id, "#" + id,
+                                Uri.parse("photo://" + id)))
                         .toList()));
     }
 
@@ -253,6 +255,6 @@ public final class ZenModePeopleLinkPreferenceControllerTest {
     }
 
     private static ColorDrawable photoOf(Contact contact) {
-        return new ColorDrawable((int) contact.id());
+        return new ColorDrawable((int) contact.contactId());
     }
 }

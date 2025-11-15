@@ -128,8 +128,8 @@ public class CombinedBiometricProfileSettingsTest {
         doReturn(mActivity).when(mFragment).getActivity();
         doReturn(mBiometricManager).when(mActivity).getSystemService(BiometricManager.class);
         when(mBiometricManager.canAuthenticate(anyInt(),
-                eq(BiometricManager.Authenticators.MANDATORY_BIOMETRICS)))
-                .thenReturn(BiometricManager.BIOMETRIC_ERROR_MANDATORY_NOT_ACTIVE);
+                eq(BiometricManager.Authenticators.IDENTITY_CHECK)))
+                .thenReturn(BiometricManager.BIOMETRIC_ERROR_IDENTITY_CHECK_NOT_ACTIVE);
 
         ReflectionHelpers.setField(mFragment, "mDashboardFeatureProvider",
                 FakeFeatureFactory.setupForTest().dashboardFeatureProvider);
@@ -177,13 +177,34 @@ public class CombinedBiometricProfileSettingsTest {
     }
 
     @Test
-    @EnableFlags(Flags.FLAG_MANDATORY_BIOMETRICS)
     public void testLaunchBiometricPrompt_onCreateFragment() {
         ArgumentCaptor<Intent> intentArgumentCaptor = ArgumentCaptor.forClass(Intent.class);
         doNothing().when(mFragment).startActivityForResult(any(), anyInt());
         when(mBiometricManager.canAuthenticate(anyInt(),
-                eq(BiometricManager.Authenticators.MANDATORY_BIOMETRICS)))
+                eq(BiometricManager.Authenticators.IDENTITY_CHECK)))
                 .thenReturn(BiometricManager.BIOMETRIC_SUCCESS);
+
+        mFragment.onAttach(mContext);
+        mFragment.onCreate(null);
+        mFragment.onActivityResult(CONFIRM_REQUEST, RESULT_FINISHED,
+                new Intent().putExtra(ChooseLockSettingsHelper.EXTRA_KEY_GK_PW_HANDLE, 1L));
+
+        verify(mFragment).startActivityForResult(intentArgumentCaptor.capture(),
+                eq(BiometricsSettingsBase.BIOMETRIC_AUTH_REQUEST));
+
+        Intent intent = intentArgumentCaptor.getValue();
+        assertThat(intent.getComponent().getClassName()).isEqualTo(
+                ConfirmDeviceCredentialActivity.InternalActivity.class.getName());
+    }
+
+    @Test
+    @EnableFlags(Flags.FLAG_BP_FALLBACK_OPTIONS)
+    public void testLaunchBiometricPrompt_hardwareUnavailable_onCreateFragment() {
+        ArgumentCaptor<Intent> intentArgumentCaptor = ArgumentCaptor.forClass(Intent.class);
+        doNothing().when(mFragment).startActivityForResult(any(), anyInt());
+        when(mBiometricManager.canAuthenticate(anyInt(),
+                eq(BiometricManager.Authenticators.IDENTITY_CHECK)))
+                .thenReturn(BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE);
 
         mFragment.onAttach(mContext);
         mFragment.onCreate(null);

@@ -24,6 +24,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.`when`
+import org.mockito.kotlin.any
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
@@ -46,7 +47,7 @@ class FingerprintEnrollTest {
     @Before
     fun setUp() {
         featureFactory = FakeFeatureFactory.setupForTest()
-        `when`(featureFactory.fingerprintFeatureProvider.enrollActivityClassProvider)
+        `when`(featureFactory.fingerprintFeatureProvider.getEnrollActivityClassProvider(any()))
             .thenReturn(activityProvider)
     }
 
@@ -81,11 +82,19 @@ class FingerprintEnrollTest {
         verifyLaunchNextActivity(activity, activityProvider.internal)
     }
 
+    @Test
+    fun testAndFinishLaunchAddAdditional() {
+        // Run
+        val activity = setupActivity(FingerprintEnroll.AddAdditionalFingerprint::class.java)
+
+        // Verify
+        verifyLaunchNextActivity(activity, activityProvider.addAnother)
+    }
+
     private fun verifyLaunchNextActivity(
         currentActivityInstance : FingerprintEnroll,
         nextActivityClass: Class<out Activity>
     ) {
-        assertThat(currentActivityInstance.isFinishing).isTrue()
         val nextActivityIntent = Shadows.shadowOf(currentActivityInstance).nextStartedActivity
         assertThat(nextActivityIntent.component!!.className).isEqualTo(nextActivityClass.name)
         assertThat(nextActivityIntent.extras!!.size()).isEqualTo(1)

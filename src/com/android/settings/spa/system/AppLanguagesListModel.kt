@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.settings.R
+import com.android.settings.Settings
+import com.android.settings.applications.AppInfoBase
 import com.android.settings.applications.AppLocaleUtil
 import com.android.settings.applications.appinfo.AppLocaleDetails
 import com.android.settings.localepicker.AppLocalePickerActivity
@@ -38,6 +40,7 @@ import com.android.settingslib.spaprivileged.model.app.AppRecord
 import com.android.settingslib.spaprivileged.model.app.userHandle
 import com.android.settingslib.spaprivileged.template.app.AppListItem
 import com.android.settingslib.spaprivileged.template.app.AppListItemModel
+import com.android.settingslib.widget.SettingsThemeHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -94,9 +97,17 @@ class AppLanguagesListModel(private val context: Context) : AppListModel<AppLang
     @Composable
     override fun AppListItemModel<AppLanguagesRecord>.AppItem() {
         AppListItem {
-            val intent = Intent(context, AppLocalePickerActivity::class.java).apply {
-                data = Uri.parse("package:${record.app.packageName}")
+            val className = if (SettingsThemeHelper.isExpressiveTheme(context)) {
+                Settings.AppLanguageSettingsActivity::class.java
+            } else {
+                AppLocalePickerActivity::class.java
             }
+
+            val intent = Intent(context, className).apply {
+                data = Uri.parse("package:${record.app.packageName}")
+                putExtra(AppInfoBase.ARG_PACKAGE_UID, record.app.uid)
+            }
+
             context.startActivityAsUser(intent, record.app.userHandle)
         }
     }

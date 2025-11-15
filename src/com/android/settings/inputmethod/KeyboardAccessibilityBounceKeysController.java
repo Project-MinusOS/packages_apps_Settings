@@ -16,20 +16,31 @@
 
 package com.android.settings.inputmethod;
 
+import static android.app.settings.SettingsEnums.ACTION_BOUNCE_KEYS_DISABLED;
+import static android.app.settings.SettingsEnums.ACTION_BOUNCE_KEYS_ENABLED;
+
 import android.content.Context;
 import android.hardware.input.InputSettings;
 import android.net.Uri;
 import android.provider.Settings;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.lifecycle.LifecycleObserver;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceScreen;
 
-import com.android.settings.R;
+import com.android.settingslib.PrimarySwitchPreference;
 
 public class KeyboardAccessibilityBounceKeysController extends
-        KeyboardAccessibilityController implements
+        InputSettingPreferenceController implements
         LifecycleObserver {
     public static final int BOUNCE_KEYS_THRESHOLD = 500;
+    private static final String KEY_TAG = "bounce_keys_dialog_tag";
+
+    @Nullable
+    private PrimarySwitchPreference mPrimaryPreference;
 
     public KeyboardAccessibilityBounceKeysController(@NonNull Context context,
             @NonNull String key) {
@@ -37,10 +48,19 @@ public class KeyboardAccessibilityBounceKeysController extends
     }
 
     @Override
-    public int getAvailabilityStatus() {
-        return (super.getAvailabilityStatus() == AVAILABLE)
-                && InputSettings.isAccessibilityBounceKeysFeatureEnabled() ? AVAILABLE
-                : UNSUPPORTED_ON_DEVICE;
+    public void displayPreference(@NonNull PreferenceScreen screen) {
+        super.displayPreference(screen);
+        mPrimaryPreference = screen.findPreference(getPreferenceKey());
+    }
+
+    @Override
+    public boolean handlePreferenceTreeClick(@NonNull Preference preference) {
+        if (!TextUtils.equals(preference.getKey(), getPreferenceKey())
+                || mFragmentManager == null) {
+            return false;
+        }
+        KeyboardAccessibilityBounceKeysDialogFragment.getInstance().show(mFragmentManager, KEY_TAG);
+        return true;
     }
 
     @Override
@@ -50,26 +70,28 @@ public class KeyboardAccessibilityBounceKeysController extends
 
     @Override
     public boolean setChecked(boolean isChecked) {
-        InputSettings.setAccessibilityBounceKeysThreshold(mContext,
-                isChecked ? BOUNCE_KEYS_THRESHOLD : 0);
+        updateInputSettingKeysValue(isChecked ? BOUNCE_KEYS_THRESHOLD : 0);
+        mMetricsFeatureProvider.action(mContext,
+                isChecked ? ACTION_BOUNCE_KEYS_ENABLED : ACTION_BOUNCE_KEYS_DISABLED);
         return true;
     }
 
-    @NonNull
     @Override
-    public CharSequence getSummary() {
-        return mContext.getString(R.string.bounce_keys_summary, BOUNCE_KEYS_THRESHOLD);
-    }
-
-    @Override
-    protected void updateKeyboardAccessibilitySettings() {
-        setChecked(
-                InputSettings.isAccessibilityBounceKeysEnabled(mContext));
+    protected void onInputSettingUpdated() {
+        if (mPrimaryPreference != null) {
+            mPrimaryPreference.setChecked(
+                    InputSettings.isAccessibilityBounceKeysEnabled(mContext));
+        }
     }
 
     @Override
     protected Uri getSettingUri() {
         return Settings.Secure.getUriFor(
                 Settings.Secure.ACCESSIBILITY_BOUNCE_KEYS);
+    }
+
+    @Override
+    protected void updateInputSettingKeysValue(int thresholdTimeMillis) {
+        InputSettings.setAccessibilityBounceKeysThreshold(mContext, thresholdTimeMillis);
     }
 }

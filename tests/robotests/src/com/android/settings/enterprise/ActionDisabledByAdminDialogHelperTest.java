@@ -28,8 +28,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import android.app.Activity;
+import android.app.admin.DeviceAdminAuthority;
 import android.app.admin.DevicePolicyManager;
+import android.app.admin.EnforcingAdmin;
+import android.app.supervision.SupervisionManager;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.pm.UserInfo;
 import android.os.Process;
 import android.os.UserHandle;
@@ -49,14 +53,19 @@ import com.android.settingslib.RestrictedLockUtils.EnforcedAdmin;
 
 import org.junit.Before;
 import org.junit.Ignore;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadow.api.Shadow;
+import org.robolectric.shadows.ShadowContextImpl;
 import org.robolectric.shadows.ShadowProcess;
 
 @RunWith(RobolectricTestRunner.class)
@@ -66,19 +75,24 @@ import org.robolectric.shadows.ShadowProcess;
         ShadowActivity.class
 })
 public class ActionDisabledByAdminDialogHelperTest {
+    @Rule public final MockitoRule mMocks = MockitoJUnit.rule();
+
     private static final ComponentName ADMIN_COMPONENT =
             new ComponentName("some.package.name", "some.package.name.SomeClass");
     private static final int USER_ID = 123;
     private static final EnforcedAdmin ENFORCED_ADMIN =
             new EnforcedAdmin(ADMIN_COMPONENT, new UserHandle(USER_ID));
+
+    @Mock private SupervisionManager mSupervisionManager;
+
     private ActionDisabledByAdminDialogHelper mHelper;
     private Activity mActivity;
-    private org.robolectric.shadows.ShadowActivity mActivityShadow;
 
     @Before
     public void setUp() {
         mActivity = Robolectric.setupActivity(CustomActivity.class);
-        mActivityShadow = Shadow.extract(mActivity);
+        ShadowContextImpl shadowContext = Shadow.extract(mActivity.getBaseContext());
+        shadowContext.setSystemService(Context.SUPERVISION_SERVICE, mSupervisionManager);
         mHelper = new ActionDisabledByAdminDialogHelper(mActivity);
     }
 
@@ -198,6 +212,28 @@ public class ActionDisabledByAdminDialogHelperTest {
         assertNull(admin.component);
         assertEquals(mActivity.getString(R.string.default_admin_support_msg),
                 Shadows.shadowOf(textView).innerText());
+    }
+
+    @Test
+    public void testSetAdminSupportDetails_enforcingAdmin() {
+        final ShadowDevicePolicyManager dpmShadow = ShadowDevicePolicyManager.getShadow();
+        final ViewGroup view = new FrameLayout(mActivity);
+        final String packageName = "some.package.name";
+        final ComponentName component =
+                new ComponentName(packageName, "some.package.name.SomeClass");
+        final EnforcingAdmin admin =
+                new EnforcingAdmin(
+                        packageName,
+                        DeviceAdminAuthority.DEVICE_ADMIN_AUTHORITY,
+                        UserHandle.of(123),
+                        component);
+        final TextView textView = createAdminSupportTextView(view, mActivity);
+        dpmShadow.setShortSupportMessageForUser(component, 123, "some message");
+        ShadowProcess.setUid(Process.SYSTEM_UID);
+
+        mHelper.setAdminSupportDetails(mActivity, view, admin);
+
+        assertEquals("some message", Shadows.shadowOf(textView).innerText());
     }
 
     @Ignore

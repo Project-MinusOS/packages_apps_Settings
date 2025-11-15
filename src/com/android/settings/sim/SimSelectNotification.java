@@ -42,6 +42,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.os.UserManager;
 import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.telephony.SubscriptionManager;
@@ -54,6 +55,7 @@ import androidx.annotation.WorkerThread;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.settings.HelpTrampoline;
 import com.android.settings.R;
+import com.android.settings.Utils;
 import com.android.settings.network.SatelliteRepository;
 import com.android.settings.network.SubscriptionUtil;
 
@@ -91,8 +93,13 @@ public class SimSelectNotification extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!SubscriptionUtil.isSimHardwareVisible(context)) {
-            Log.w(TAG, "Received unexpected intent with null action.");
+        UserManager userManager = context.getSystemService(UserManager.class);
+        if (userManager != null && !userManager.isMainUser()) {
+            Log.d(TAG, "The userId is not the main user");
+            return;
+        }
+        if (!Utils.isMobileDataCapable(context) && !Utils.isVoiceCapable(context)) {
+            Log.w(TAG, "No support on device without data or voice capabilities.");
             return;
         }
         String action = intent.getAction();

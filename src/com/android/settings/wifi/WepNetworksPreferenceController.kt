@@ -18,7 +18,9 @@ package com.android.settings.wifi
 
 import android.content.Context
 import android.net.wifi.WifiManager
-import androidx.compose.foundation.layout.fillMaxWidth
+import android.security.advancedprotection.AdvancedProtectionManager
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,7 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.settings.R
 import com.android.settings.spa.preference.ComposePreferenceController
@@ -50,6 +52,9 @@ class WepNetworksPreferenceController(context: Context, preferenceKey: String) :
     ComposePreferenceController(context, preferenceKey) {
 
     var wifiManager = context.getSystemService(WifiManager::class.java)!!
+    var aapmManager = if (android.security.Flags.aapmApi() && Flags.wepDisabledInApm())
+        context.getSystemService(AdvancedProtectionManager::class.java)!!
+    else null
 
     override fun getAvailabilityStatus() =
         if (Flags.androidVWifiApi()) AVAILABLE else UNSUPPORTED_ON_DEVICE
@@ -60,27 +65,49 @@ class WepNetworksPreferenceController(context: Context, preferenceKey: String) :
             isWepSupportedFlow.collectAsStateWithLifecycle(initialValue = null).value
         val isWepAllowed: Boolean? =
             wepAllowedFlow.flow.collectAsStateWithLifecycle(initialValue = null).value
-        var openDialog by rememberSaveable { mutableStateOf(false) }
-        SwitchPreference(
-            object : SwitchPreferenceModel {
-                override val title = stringResource(R.string.wifi_allow_wep_networks)
-                override val summary = { getSummary(isWepSupported) }
-                override val checked = {
-                    if (isWepSupported == true) isWepAllowed else isWepSupported
-                }
-                override val changeable: () -> Boolean
-                    get() = { isWepSupported == true }
+        val isAapmEnabled: Boolean? = if (android.security.Flags.aapmApi()
+            && Flags.wepDisabledInApm())
+                isAapmEnabledFlow.collectAsStateWithLifecycle(initialValue = null).value
+        else false
 
-                override val onCheckedChange: (Boolean) -> Unit = { newChecked ->
-                    val wifiInfo = wifiManager.connectionInfo
-                    if (!newChecked && wifiInfo.currentSecurityType == WifiEntry.SECURITY_WEP) {
-                        openDialog = true
-                    } else {
-                        wifiManager.setWepAllowed(newChecked)
-                        wepAllowedFlow.override(newChecked)
+        var openDialog by rememberSaveable { mutableStateOf(false) }
+
+        RestrictionWrapper(
+            restricted = isAapmEnabled == true
+        ) {
+            SwitchPreference(
+                object : SwitchPreferenceModel {
+                    override val title = stringResource(R.string.wifi_allow_wep_networks)
+                    override val summary = { getSummary(isWepSupported) }
+                    override val checked = {
+                        when {
+                            isWepSupported == false -> false
+                            isAapmEnabled == true -> false
+                            else -> isWepAllowed
+                        }
                     }
+                    override val changeable: () -> Boolean
+                        get() = { isWepSupported == true && isAapmEnabled == false }
+
+                    override val onCheckedChange: ((Boolean) -> Unit)? =
+                        if (isAapmEnabled == true) {
+                            null
+                        } else {
+                            { newChecked ->
+                                val wifiInfo = wifiManager.connectionInfo
+                                if (!newChecked &&
+                                    wifiInfo.currentSecurityType == WifiEntry.SECURITY_WEP
+                                ) {
+                                    openDialog = true
+                                } else {
+                                    wifiManager.setWepAllowed(newChecked)
+                                    wepAllowedFlow.override(newChecked)
+                                }
+                            }
+                        }
                 }
-            })
+            )
+        }
         if (openDialog) {
             SettingsAlertDialogWithIcon(
                 onDismissRequest = { openDialog = false },
@@ -94,12 +121,23 @@ class WepNetworksPreferenceController(context: Context, preferenceKey: String) :
                     AlertDialogButton(stringResource(R.string.wifi_cancel)) { openDialog = false },
                 title = stringResource(R.string.wifi_settings_wep_networks_disconnect_title),
                 text = {
-                    Text(
-                        stringResource(R.string.wifi_settings_wep_networks_disconnect_summary),
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
+                    Text(stringResource(R.string.wifi_settings_wep_networks_disconnect_summary))
                 })
+        }
+    }
+
+    @Composable
+    private fun RestrictionWrapper(restricted: Boolean, content: @Composable () -> Unit) {
+        if (restricted) {
+            Box(
+                Modifier.clickable(
+                    enabled = true,
+                    role = Role.Switch,
+                    onClick = ::startSupportIntent
+                )
+            ) { content() }
+        } else {
+            content()
         }
     }
 
@@ -113,6 +151,16 @@ class WepNetworksPreferenceController(context: Context, preferenceKey: String) :
 
     private val isWepSupportedFlow =
         flow { emit(wifiManager.isWepSupported) }.flowOn(Dispatchers.Default)
+
+    private val isAapmEnabledFlow = flow {
+        emit(aapmManager?.isAdvancedProtectionEnabled ?: false) }.flowOn(Dispatchers.Default)
+
+    private fun startSupportIntent() {
+        AdvancedProtectionManager.createSupportIntent(
+            AdvancedProtectionManager.FEATURE_ID_DISALLOW_WEP,
+            AdvancedProtectionManager.SUPPORT_DIALOG_TYPE_DISABLED_SETTING
+        ).let { mContext.startActivity(it) }
+    }
 
     val wepAllowedFlow =
         OverridableFlow(

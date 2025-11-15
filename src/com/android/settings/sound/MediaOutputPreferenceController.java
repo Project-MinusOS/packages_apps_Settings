@@ -17,6 +17,7 @@
 package com.android.settings.sound;
 
 import static com.android.settingslib.media.flags.Flags.enableOutputSwitcherForSystemRouting;
+import static com.android.media.flags.Flags.enableOutputSwitcherPersonalAudioSharing;
 
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothLeBroadcast;
@@ -40,7 +41,10 @@ import com.android.settingslib.bluetooth.A2dpProfile;
 import com.android.settingslib.bluetooth.HearingAidProfile;
 import com.android.settingslib.bluetooth.LocalBluetoothLeBroadcast;
 import com.android.settingslib.bluetooth.LocalBluetoothManager;
+import com.android.settingslib.media.LocalMediaManager;
+import com.android.settingslib.media.MediaDevice;
 import com.android.settingslib.media.MediaOutputConstants;
+import com.android.settingslib.media.PhoneMediaDevice;
 
 import java.util.List;
 
@@ -52,11 +56,13 @@ import java.util.List;
  * - Media stream captured by remote device
  * - During a call.
  */
-public class MediaOutputPreferenceController extends AudioSwitchPreferenceController {
+public class MediaOutputPreferenceController extends AudioSwitchPreferenceController implements
+        LocalMediaManager.DeviceCallback {
 
     private static final String TAG = "MediaOutputPreferenceController";
     @Nullable private MediaController mMediaController;
     private MediaSessionManager mMediaSessionManager;
+    @Nullable LocalMediaManager mLocalMediaManager;
 
     @Nullable private LocalBluetoothLeBroadcast mLocalBluetoothLeBroadcast;
 
@@ -103,6 +109,7 @@ public class MediaOutputPreferenceController extends AudioSwitchPreferenceContro
         super(context, key);
         mMediaSessionManager = context.getSystemService(MediaSessionManager.class);
         mMediaController = MediaOutputUtils.getActiveLocalMediaController(mMediaSessionManager);
+        mLocalMediaManager = new LocalMediaManager(mContext, /* packageName= */ null);
         LocalBluetoothManager localBluetoothManager =
                 com.android.settings.bluetooth.Utils.getLocalBtManager(mContext);
         if (localBluetoothManager != null) {
@@ -118,6 +125,9 @@ public class MediaOutputPreferenceController extends AudioSwitchPreferenceContro
             mLocalBluetoothLeBroadcast.registerServiceCallBack(
                     mContext.getMainExecutor(), mBroadcastCallback);
         }
+        if (mLocalMediaManager != null) {
+            mLocalMediaManager.registerCallback(this);
+        }
     }
 
     @Override
@@ -126,14 +136,28 @@ public class MediaOutputPreferenceController extends AudioSwitchPreferenceContro
         if (mLocalBluetoothLeBroadcast != null) {
             mLocalBluetoothLeBroadcast.unregisterServiceCallBack(mBroadcastCallback);
         }
+        if (mLocalMediaManager != null) {
+            mLocalMediaManager.unregisterCallback(this);
+        }
     }
 
     @Override
     public void displayPreference(PreferenceScreen screen) {
         super.displayPreference(screen);
 
+        // Always use media switcher to control routing in desktop.
+        if (PhoneMediaDevice.inputRoutingEnabledAndIsDesktop(mContext)) {
+            mPreference.setVisible(true);
+            return;
+        }
+
         mPreference.setVisible(!Utils.isAudioModeOngoingCall(mContext)
                 && (enableOutputSwitcherForSystemRouting() ? true : mMediaController != null));
+    }
+
+    @Override
+    public void onSelectedDeviceStateChanged(MediaDevice device, int state) {
+        updateState(mPreference);
     }
 
     @Override
@@ -153,8 +177,10 @@ public class MediaOutputPreferenceController extends AudioSwitchPreferenceContro
         }
 
         mPreference.setEnabled(true);
-        if (Utils.isAudioModeOngoingCall(mContext)) {
-            // Ongoing call status, switch entry for media will be disabled.
+        if (Utils.isAudioModeOngoingCall(mContext) &&
+                !PhoneMediaDevice.inputRoutingEnabledAndIsDesktop(mContext)) {
+            // Ongoing call status, switch entry for media will be disabled, unless input routing is
+            // enabled in desktop.
             mPreference.setVisible(false);
             preference.setSummary(
                     mContext.getText(R.string.media_out_summary_ongoing_call_state));
@@ -183,12 +209,19 @@ public class MediaOutputPreferenceController extends AudioSwitchPreferenceContro
         }
         if (isDeviceBroadcasting()) {
             mPreference.setSummary(R.string.media_output_audio_sharing);
-            mPreference.setEnabled(false);
+            if (!enableOutputSwitcherPersonalAudioSharing()) {
+                mPreference.setEnabled(false);
+            }
         } else {
-            mPreference.setSummary(
-                    (activeDevice == null)
-                            ? mContext.getText(R.string.media_output_default_summary)
-                            : activeDevice.getAlias());
+            if (mLocalMediaManager != null
+                    && mLocalMediaManager.getCurrentConnectedDevice() != null) {
+                mPreference.setSummary(mLocalMediaManager.getCurrentConnectedDevice().getName());
+            } else {
+                mPreference.setSummary(
+                        (activeDevice == null)
+                                ? mContext.getText(R.string.media_output_default_summary)
+                                : activeDevice.getAlias());
+            }
         }
     }
 

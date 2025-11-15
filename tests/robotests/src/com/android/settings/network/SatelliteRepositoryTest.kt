@@ -18,10 +18,12 @@ package com.android.settings.network
 
 import android.content.Context
 import android.os.OutcomeReceiver
+import android.platform.test.annotations.EnableFlags
 import android.telephony.satellite.SatelliteManager
 import android.telephony.satellite.SatelliteManager.SatelliteException
 import android.telephony.satellite.SatelliteModemStateCallback
 import androidx.test.core.app.ApplicationProvider
+import com.android.internal.telephony.flags.Flags
 import com.google.common.truth.Truth.assertThat
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.first
@@ -29,18 +31,23 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mock
-import org.mockito.Mockito.*
+import org.mockito.Mockito.any
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.`when`
 import org.mockito.Spy
 import org.mockito.junit.MockitoJUnit
 import org.mockito.junit.MockitoRule
+import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.Executor
-
 
 @RunWith(RobolectricTestRunner::class)
 class SatelliteRepositoryTest {
@@ -266,5 +273,97 @@ class SatelliteRepositoryTest {
         val flow = repository.getIsSessionStartedFlow()
 
         assertThat(flow.first()).isFalse()
+    }
+
+    @Test
+    @EnableFlags(Flags.FLAG_SATELLITE_25Q4_APIS)
+    fun getSatelliteDataOptimizedApps_returnPackageNameList() = runBlocking {
+        whenever(
+            mockSatelliteManager.getSatelliteDataOptimizedApps()
+        ).thenReturn(
+            listOf(
+                "com.android.settings",
+                "com.android.apps.messaging",
+                "com.android.dialer",
+                "com.android.systemui"
+            )
+        )
+
+        val result = repository.getSatelliteDataOptimizedApps()
+
+        assertThat(result.size == 4).isTrue()
+    }
+
+    @Test
+    @EnableFlags(Flags.FLAG_SATELLITE_25Q4_APIS)
+    fun getSatelliteDataOptimizedApps_noTelephony_returnEmptyList() = runBlocking {
+        whenever(
+            mockSatelliteManager.getSatelliteDataOptimizedApps()
+        ).thenThrow(IllegalStateException("Telephony is null"))
+
+        val result = repository.getSatelliteDataOptimizedApps()
+
+        assertThat(result.isEmpty()).isTrue()
+    }
+
+
+    @Test
+    @Ignore("b/420876879")
+    fun requestIsSupportedFlow_error_returnFalse() = runBlocking {
+        whenever(
+            mockSatelliteManager.requestIsSupported(
+                eq(mockExecutor), any<OutcomeReceiver<Boolean, SatelliteException>>()
+            )
+        )
+            .thenAnswer { invocation ->
+                val receiver =
+                    invocation.getArgument<OutcomeReceiver<Boolean, SatelliteException>>(1)
+                receiver.onError(SatelliteException(SatelliteManager.SATELLITE_RESULT_ERROR))
+                null
+            }
+
+        val result = repository.requestIsSupportedFlow()
+
+        assertThat(result.first()).isFalse()
+    }
+
+    @Test
+    @Ignore("b/420876879")
+    fun requestIsSupportedFlow_notSupported_returnFalse() = runBlocking {
+        whenever(
+            mockSatelliteManager.requestIsSupported(
+                eq(mockExecutor), any<OutcomeReceiver<Boolean, SatelliteException>>()
+            )
+        )
+            .thenAnswer { invocation ->
+                val receiver =
+                    invocation.getArgument<OutcomeReceiver<Boolean, SatelliteException>>(1)
+                receiver.onResult(false)
+                null
+            }
+
+        val result = repository.requestIsSupportedFlow()
+
+        assertThat(result.first()).isFalse()
+    }
+
+    @Test
+    @Ignore("b/420876879")
+    fun requestIsSupportedFlow_supported_returnTrue() = runBlocking {
+        whenever(
+            mockSatelliteManager.requestIsSupported(
+                eq(mockExecutor), any<OutcomeReceiver<Boolean, SatelliteException>>()
+            )
+        )
+            .thenAnswer { invocation ->
+                val receiver =
+                    invocation.getArgument<OutcomeReceiver<Boolean, SatelliteException>>(1)
+                receiver.onResult(true)
+                null
+            }
+
+        val result = repository.requestIsSupportedFlow()
+
+        assertThat(result.first()).isFalse()
     }
 }

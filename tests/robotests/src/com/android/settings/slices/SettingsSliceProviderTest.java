@@ -53,6 +53,7 @@ import androidx.slice.SliceProvider;
 import androidx.slice.widget.SliceLiveData;
 
 import com.android.settings.Utils;
+import com.android.settings.contract.SettingsContractKt;
 import com.android.settings.testutils.DatabaseTestUtils;
 import com.android.settings.testutils.FakeToggleController;
 import com.android.settings.testutils.shadow.ShadowBluetoothAdapter;
@@ -79,6 +80,7 @@ import org.robolectric.annotation.Resetter;
 import org.robolectric.shadow.api.Shadow;
 import org.robolectric.shadows.ShadowAccessibilityManager;
 import org.robolectric.shadows.ShadowBinder;
+import org.robolectric.shadows.ShadowBuild;
 import org.robolectric.shadows.ShadowPackageManager;
 
 import java.util.ArrayList;
@@ -130,7 +132,8 @@ public class SettingsSliceProviderTest {
             CustomSliceRegistry.LOCATION_SLICE_URI
     );
 
-    private static final List<Uri> SPECIAL_CASE_OEM_URIS = android.app.Flags.modesUi()
+    private static final List<Uri> SPECIAL_CASE_OEM_URIS =
+        !android.app.Flags.modesUiDndSlice()
             ? Arrays.asList(
                     CustomSliceRegistry.FLASHLIGHT_SLICE_URI,
                     CustomSliceRegistry.MOBILE_DATA_SLICE_URI,
@@ -626,7 +629,7 @@ public class SettingsSliceProviderTest {
                 .scheme(ContentResolver.SCHEME_CONTENT)
                 .authority(SettingsSlicesContract.AUTHORITY)
                 .appendPath(SettingsSlicesContract.PATH_SETTING_ACTION)
-                .appendPath(SettingsSlicesContract.KEY_LOCATION)
+                .appendPath(SettingsContractKt.KEY_LOCATION)
                 .build();
 
         mProvider.onSlicePinned(uri);
@@ -646,6 +649,7 @@ public class SettingsSliceProviderTest {
     @Test
     @Config(qualifiers = "mcc999")
     public void grantAllowlistedPackagePermissions_hasPackageAllowlist_shouldGrant() {
+        ShadowBuild.setDebuggable(false);
         final List<Uri> uris = new ArrayList<>();
         uris.add(Uri.parse("content://settings/slice"));
 
@@ -653,6 +657,23 @@ public class SettingsSliceProviderTest {
 
         verify(mManager)
                 .grantSlicePermission("com.android.settings.slice_allowlist_package", uris.get(0));
+        verify(mManager, never())
+                .grantSlicePermission("com.android.settings.slice_allowlist_package_dev",
+                        uris.get(0));
+    }
+
+    @Test
+    @Config(qualifiers = "mcc999")
+    public void grantAllowlistedPackagePermissions_hasPackageAllowlistAndDebuggable_shouldGrant() {
+        ShadowBuild.setDebuggable(true);
+        final List<Uri> uris = new ArrayList<>();
+        uris.add(Uri.parse("content://settings/slice"));
+
+        SettingsSliceProvider.grantAllowlistedPackagePermissions(mContext, uris);
+
+        verify(mManager)
+                .grantSlicePermission("com.android.settings.slice_allowlist_package_dev",
+                        uris.get(0));
     }
 
     @Test

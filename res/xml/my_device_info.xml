@@ -23,7 +23,6 @@
 
     <com.android.settingslib.widget.LayoutPreference
         android:key="my_device_info_header"
-        android:order="0"
         android:layout="@layout/settings_entity_header"
         android:selectable="false"
         settings:isPreferenceVisible="false"/>
@@ -57,13 +56,13 @@
             android:order="3"
             android:title="@string/status_number"
             android:summary="@string/summary_placeholder"
-            android:selectable="false"
             settings:isPreferenceVisible="@bool/config_show_sim_info"
             settings:controller="com.android.settings.deviceinfo.PhoneNumberPreferenceController"
             settings:enableCopying="true"/>
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:key="legal_category"
         android:title="@string/my_device_info_legal_category_title">
 
         <!-- Legal information -->
@@ -116,7 +115,7 @@
             settings:controller="com.android.settings.deviceinfo.HardwareInfoPreferenceController"/>
 
         <!-- EID -->
-        <com.android.settingslib.CustomDialogPreferenceCompat
+        <com.android.settings.deviceinfo.simstatus.SimEidInfoPreference
             android:key="eid_info"
             android:order="31"
             android:title="@string/status_eid"
@@ -157,6 +156,7 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+        android:key="device_identifiers_category"
         android:title="@string/my_device_info_device_identifiers_category_title">
 
         <!--IP address -->

@@ -23,6 +23,7 @@ import static org.mockito.Mockito.when;
 
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.res.Resources;
 import android.provider.Settings.System;
 import android.telephony.TelephonyManager;
 
@@ -39,12 +40,17 @@ import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
+// LINT.IfChange
 @RunWith(RobolectricTestRunner.class)
 @Config(shadows = {
         com.android.settings.testutils.shadow.ShadowFragment.class,
 })
 public class DialPadTonePreferenceControllerTest {
 
+    @Mock
+    private Resources mResources;
+    @Mock
+    private Context mContext;
     @Mock
     private TelephonyManager mTelephonyManager;
     @Mock
@@ -55,8 +61,6 @@ public class DialPadTonePreferenceControllerTest {
     private ContentResolver mContentResolver;
     @Mock
     private SoundSettings mSetting;
-    @Mock
-    private Context mContext;
 
     private DialPadTonePreferenceController mController;
     private SwitchPreference mPreference;
@@ -64,9 +68,13 @@ public class DialPadTonePreferenceControllerTest {
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
+        when(mContext.getResources()).thenReturn(mResources);
         when(mContext.getSystemService(Context.TELEPHONY_SERVICE)).thenReturn(mTelephonyManager);
-        when(mTelephonyManager.isVoiceCapable()).thenReturn(true);
+        when(mTelephonyManager.isDeviceVoiceCapable()).thenReturn(true);
+        when(mResources.getBoolean(com.android.settings.R.bool.config_show_sim_info))
+                .thenReturn(true);
         when(mSetting.getActivity()).thenReturn(mActivity);
+        when(mActivity.getResources()).thenReturn(mResources);
         when(mActivity.getSystemService(Context.TELEPHONY_SERVICE)).thenReturn(mTelephonyManager);
         when(mActivity.getContentResolver()).thenReturn(mContentResolver);
         mPreference = new SwitchPreference(RuntimeEnvironment.application);
@@ -82,7 +90,15 @@ public class DialPadTonePreferenceControllerTest {
 
     @Test
     public void isAvailable_notVoiceCapable_shouldReturnFalse() {
-        when(mTelephonyManager.isVoiceCapable()).thenReturn(false);
+        when(mTelephonyManager.isDeviceVoiceCapable()).thenReturn(false);
+
+        assertThat(mController.isAvailable()).isFalse();
+    }
+
+    @Test
+    public void isAvailable_telephonyDisabled_shouldReturnFalse() {
+        when(mResources.getBoolean(com.android.settings.R.bool.config_show_sim_info))
+                .thenReturn(false);
 
         assertThat(mController.isAvailable()).isFalse();
     }
@@ -123,3 +139,4 @@ public class DialPadTonePreferenceControllerTest {
         assertThat(System.getInt(mContentResolver, System.DTMF_TONE_WHEN_DIALING, 1)).isEqualTo(0);
     }
 }
+// LINT.ThenChange(DialPadTonePreferenceTest.kt)

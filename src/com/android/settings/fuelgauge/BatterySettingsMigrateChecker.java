@@ -20,6 +20,7 @@ import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.AsyncTask;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -48,10 +49,11 @@ public final class BatterySettingsMigrateChecker extends BroadcastReceiver {
     }
 
     static void verifyConfiguration(Context context) {
-        context = context.getApplicationContext();
-        verifySaverConfiguration(context);
-        verifyBatteryOptimizeModes(context);
-        DynamicDenylistManager.getInstance(context).onBootComplete();
+        final Context applicationContext = context.getApplicationContext();
+        verifySaverConfiguration(applicationContext);
+        verifyBatteryOptimizeModes(applicationContext);
+        AsyncTask.execute(() ->
+                DynamicDenylistManager.getInstance(applicationContext).onBootComplete());
     }
 
     /** Avoid users set important apps into the unexpected battery optimize modes */
@@ -72,25 +74,22 @@ public final class BatterySettingsMigrateChecker extends BroadcastReceiver {
             Context context,
             @BatteryOptimizeUtils.OptimizationMode int optimizationMode,
             List<String> allowList) {
-        allowList.forEach(
-                packageName -> {
-                    final BatteryOptimizeUtils batteryOptimizeUtils =
-                            BatteryBackupHelper.newBatteryOptimizeUtils(
-                                    context,
-                                    packageName,
-                                    /* testOptimizeUtils */ sBatteryOptimizeUtils);
-                    if (batteryOptimizeUtils == null) {
-                        return;
-                    }
-                    if (batteryOptimizeUtils.getAppOptimizationMode() != optimizationMode) {
-                        Log.w(
-                                TAG,
-                                "Reset " + packageName + " battery mode into " + optimizationMode);
-                        batteryOptimizeUtils.setAppUsageState(
-                                optimizationMode,
-                                BatteryOptimizeHistoricalLogEntry.Action.FORCE_RESET);
-                    }
-                });
+        for (String packageName : allowList) {
+            final BatteryOptimizeUtils batteryOptimizeUtils =
+                    BatteryBackupHelper.newBatteryOptimizeUtils(
+                            context,
+                            packageName,
+                            /* testOptimizeUtils */ sBatteryOptimizeUtils);
+            if (batteryOptimizeUtils == null) {
+                continue;
+            }
+            if (batteryOptimizeUtils.getAppOptimizationMode() != optimizationMode) {
+                Log.w(TAG, "Reset " + packageName + " mode into " + optimizationMode);
+                batteryOptimizeUtils.setAppUsageState(
+                        optimizationMode,
+                        BatteryOptimizeHistoricalLogEntry.Action.FORCE_RESET);
+            }
+        }
     }
 
     static void verifySaverConfiguration(Context context) {

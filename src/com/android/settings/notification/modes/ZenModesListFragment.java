@@ -35,6 +35,7 @@ import com.android.settingslib.notification.modes.ZenIconLoader;
 import com.android.settingslib.notification.modes.ZenMode;
 import com.android.settingslib.notification.modes.ZenModesBackend;
 import com.android.settingslib.search.SearchIndexable;
+import com.android.settingslib.widget.SettingsThemeHelper;
 
 import com.google.common.collect.ImmutableList;
 
@@ -74,7 +75,9 @@ public class ZenModesListFragment extends ZenModesFragmentBase {
 
     @Override
     protected int getPreferenceScreenResId() {
-        return R.xml.modes_list_settings;
+        return SettingsThemeHelper.isExpressiveTheme(requireContext())
+                ? R.xml.modes_list_settings_expressive
+                : R.xml.modes_list_settings;
     }
 
     @Override
@@ -125,7 +128,7 @@ public class ZenModesListFragment extends ZenModesFragmentBase {
         // If we find a new mode owned by the same package, presumably that's it. Open its page.
         Optional<ZenMode> createdZenMode = mBackend.getModes().stream()
                 .filter(m -> !previousIds.contains(m.getId()))
-                .filter(m -> m.getRule().getPackageName().equals(activityInvoked.getPackageName()))
+                .filter(m -> activityInvoked.getPackageName().equals(m.getOwnerPackage()))
                 .findFirst();
         createdZenMode.ifPresent(
                 mode ->

@@ -174,7 +174,8 @@ public class AudioSharingNamePreferenceController extends BasePreferenceControll
 
     @Override
     public int getAvailabilityStatus() {
-        return BluetoothUtils.isAudioSharingEnabled() ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
+        return BluetoothUtils.isAudioSharingUIAvailable(mContext) ? AVAILABLE
+                : UNSUPPORTED_ON_DEVICE;
     }
 
     @Override
@@ -286,6 +287,10 @@ public class AudioSharingNamePreferenceController extends BasePreferenceControll
 
     @Override
     public boolean isTextValid(String value) {
-        return mAudioSharingNameTextValidator.isTextValid(value);
+        boolean isValid = mAudioSharingNameTextValidator.isTextValid(value);
+        if (mPreference != null) {
+            mPreference.showEditTextFormatAlert(!isValid);
+        }
+        return isValid;
     }
 }
