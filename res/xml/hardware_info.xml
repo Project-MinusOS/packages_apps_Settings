@@ -30,6 +30,16 @@
         settings:controller="com.android.settings.deviceinfo.hardwareinfo.DeviceModelPreferenceController"
         settings:enableCopying="true"/>
 
+    <!-- IMEI -->
+    <Preference
+        android:key="imei_info"
+        android:title="@string/status_imei"
+        android:summary="@string/summary_placeholder"
+        settings:keywords="@string/keywords_imei_info"
+        settings:enableCopying="true"
+        settings:isPreferenceVisible="@bool/config_show_sim_info"
+        settings:controller="com.android.settings.deviceinfo.imei.ImeiInfoPreferenceController"/>
+
     <!-- SerialNumber -->
     <Preference
         android:key="hardware_info_device_serial"

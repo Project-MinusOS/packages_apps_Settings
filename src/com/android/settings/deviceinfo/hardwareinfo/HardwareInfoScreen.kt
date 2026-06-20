@@ -23,6 +23,9 @@ import androidx.preference.Preference
 import com.android.settings.R
 import com.android.settings.core.PreferenceScreenMixin
 import com.android.settings.deviceinfo.HardwareInfoPreferenceController.getDeviceModel
+import com.android.settings.deviceinfo.imei.ImeiPreference
+import com.android.settings.deviceinfo.imei.getImeiList
+import com.android.settings.wifi.utils.activeModemCount
 import com.android.settingslib.metadata.PreferenceAvailabilityProvider
 import com.android.settingslib.metadata.preferencesapi.preconditions.PreconditionStability
 import com.android.settingslib.metadata.PreferenceSummaryProvider
@@ -79,6 +82,11 @@ open class HardwareInfoScreen :
     override fun getPreferenceHierarchy(context: Context, coroutineScope: CoroutineScope) =
         preferenceHierarchy(context) {
             +DeviceModelPreference()
+            val activeModemCount = context.activeModemCount
+            val imeiList = context.getImeiList
+            for (i in 0 until activeModemCount) {
+                +ImeiPreference(context, i, activeModemCount, imeiList) order (i + 1)
+            }
             +HardwareVersionPreference()
         }
 

@@ -29,7 +29,7 @@ import android.util.Log;
 import androidx.annotation.VisibleForTesting;
 import androidx.fragment.app.Fragment;
 import androidx.preference.Preference;
-import androidx.preference.PreferenceCategory;
+import androidx.preference.PreferenceGroup;
 import androidx.preference.PreferenceScreen;
 
 import com.android.settings.R;
@@ -99,7 +99,10 @@ public class ImeiInfoPreferenceController extends BasePreferenceController {
         if (preference == null || !preference.isVisible()) {
             return;
         }
-        PreferenceCategory category = screen.findPreference(KEY_PREFERENCE_CATEGORY);
+        PreferenceGroup parent = screen.findPreference(KEY_PREFERENCE_CATEGORY);
+        if (parent == null) {
+            parent = screen;
+        }
 
         int imeiPreferenceOrder = preference.getOrder();
         screen.removePreference(preference);
@@ -117,7 +120,7 @@ public class ImeiInfoPreferenceController extends BasePreferenceController {
             multiImeiPreference.setEnabled(true);
             multiImeiPreference.setCopyingEnabled(true);
 
-            category.addPreference(multiImeiPreference);
+            parent.addPreference(multiImeiPreference);
         }
     }
 

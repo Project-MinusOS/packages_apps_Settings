@@ -3664,6 +3664,18 @@
     <string name="build_number">Build number</string>
     <!-- About phone screen, tapping this button will take user to a seperate UI to check Google Play system update [CHAR LIMIT=60] -->
     <string name="module_version">Google Play system update</string>
+    <!-- About phone screen, setting option name for MinusOS version [CHAR LIMIT=40] -->
+    <string name="minus_os_version">MinusOS version</string>
+    <!-- Purpose for the MinusOS version preference. -->
+    <string name="minus_os_version_purpose">View MinusOS version</string>
+    <!-- MinusOS logo text. -->
+    <string name="minus_os_logo" translatable="false">MinusOS</string>
+    <!-- Purpose for the MinusOS logo card. -->
+    <string name="minus_os_logo_purpose">Show MinusOS logo</string>
+    <!-- MinusOS logo prefix. -->
+    <string name="minus_os_logo_minus" translatable="false">Minus</string>
+    <!-- MinusOS logo suffix. -->
+    <string name="minus_os_logo_os" translatable="false">OS</string>
     <!-- About phone screen, show a list of battery information  [CHAR LIMIT=60] -->
     <string name="battery_info">Battery information</string>
 
